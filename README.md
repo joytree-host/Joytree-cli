@@ -146,7 +146,7 @@ Credentials are stored at `~/.joytree/credentials.json` (mode 600).
 You can also use environment variables:
 ```bash
 export JOYTREE_API_KEY=jtk_your_key_here
-export JOYTREE_BASE_URL=https://joytree.app
+export JOYTREE_BASE_URL=https://joytree.site
 ```
 
 ---

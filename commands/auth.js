@@ -57,7 +57,7 @@ function whoami() {
   ui.header('Current Session');
   if (creds.email) ui.label('Email',   creds.email);
   ui.label('API Key', creds.apiKey.slice(0, 8) + '…' + creds.apiKey.slice(-4));
-  ui.label('Host',    creds.baseUrl || 'https://joytree.app');
+  ui.label('Host',    creds.baseUrl || 'https://joytree.site');
   ui.label('Config',  config.CONFIG_FILE);
   console.log();
 }

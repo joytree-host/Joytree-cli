@@ -129,7 +129,7 @@ function showHelp() {
 
   // ── FOOTER ──
   console.log(`${c.dim}  Run ${c.cyan}joytree <command> --help${c.dim} for detailed options on any command.${c.reset}`);
-  console.log(`${c.dim}  Docs: ${c.cyan}https://docs.joytree.app${c.reset}\n`);
+  console.log(`${c.dim}  Docs: ${c.cyan}https://docs.joytree.site${c.reset}\n`);
 }
 
 program
