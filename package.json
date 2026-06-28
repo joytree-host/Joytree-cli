@@ -1,0 +1,20 @@
+{
+  "name": "@joytreeapp/joytree",
+  "version": "1.0.0",
+  "description": "🌳 Joytree CLI — deploy and manage your sites from the terminal",
+  "main": "bin/joytree.js",
+  "bin": {
+    "joytree": "bin/joytree.js"
+  },
+  "scripts": {
+    "start": "node bin/joytree.js"
+  },
+  "keywords": ["joytree", "deploy", "hosting", "cli"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  }
+}
