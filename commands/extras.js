@@ -3,23 +3,20 @@
 const { api } = require('../lib/api');
 const ui      = require('../lib/ui');
 
-// ── Activity feed ─────────────────────────────────────────────────────
 async function activity(opts) {
   const limit = parseInt(opts.limit, 10) || 20;
   const spin = ui.spinner('Fetching activity');
   try {
-    const data = await api.get(`/api/activity?limit=${limit}`);
+    const data = await api.get(`/api/v1/activity?limit=${limit}`);
     spin.stop();
-    const items = Array.isArray(data) ? data : (data.activity || data.events || data.items || []);
+    const items = data.activity || [];
     if (!items.length) { ui.info('No recent activity.'); return; }
     ui.header('Recent Activity');
     ui.divider();
-    items.slice(0, limit).forEach(a => {
-      const ts  = a.createdAt || a.timestamp ? `${ui.c.dim}${new Date(a.createdAt || a.timestamp).toLocaleString()}${ui.c.reset}` : '';
-      const type = a.type || a.event || '';
-      const project = a.projectName || a.subdomain || a.projectId || '';
-      console.log(`  ${ui.c.bold}${type}${ui.c.reset}${project ? '  ' + project : ''}  ${ts}`);
-      if (a.message || a.description) console.log(`     ${ui.c.dim}${a.message || a.description}${ui.c.reset}`);
+    items.forEach(a => {
+      const ts = a.at ? `${ui.c.dim}${new Date(a.at).toLocaleString()}${ui.c.reset}` : '';
+      console.log(`  ${ui.statusBadge(a.status)}  ${ui.c.bold}${a.subdomain || a.projectId || '—'}${ui.c.reset}  ${ts}`);
+      if (a.branch) console.log(`     ${ui.c.dim}branch: ${a.branch}  commit: ${a.commit||'—'}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {
@@ -29,12 +26,11 @@ async function activity(opts) {
   }
 }
 
-// ── Stop a running deployment ─────────────────────────────────────────
 async function stopDeploy(deployId) {
   const spin = ui.spinner(`Stopping deployment ${deployId}`);
   try {
-    await api.post(`/api/deploy/${encodeURIComponent(deployId)}/stop`, {});
-    spin.stop(`Deployment ${ui.c.bold}${deployId}${ui.c.reset} stopped.`);
+    await api.post(`/api/v1/projects/${encodeURIComponent(deployId)}/stop`, {});
+    spin.stop(`Stopped ${ui.c.bold}${deployId}${ui.c.reset}`);
   } catch (err) {
     spin.stop();
     ui.error(`Failed: ${err.message}`);
@@ -42,16 +38,15 @@ async function stopDeploy(deployId) {
   }
 }
 
-// ── Autodeploy toggle ─────────────────────────────────────────────────
 async function autodeploy(projectId, opts) {
-  const enable = opts.enable !== undefined ? true : opts.disable !== undefined ? false : null;
+  const enable = opts.enable ? true : opts.disable ? false : null;
   if (enable === null) {
-    ui.error('Specify --enable or --disable. Example: joytree autodeploy my-site --enable');
+    ui.error('Specify --enable or --disable');
     process.exit(1);
   }
   const spin = ui.spinner(`${enable ? 'Enabling' : 'Disabling'} auto-deploy for ${projectId}`);
   try {
-    await api.post(`/api/projects/${encodeURIComponent(projectId)}/autodeploy`, { enabled: enable });
+    await api.patch(`/api/v1/projects/${encodeURIComponent(projectId)}`, { autoDeploy: enable });
     spin.stop(`Auto-deploy ${enable ? ui.c.green + 'enabled' : ui.c.yellow + 'disabled'}${ui.c.reset} for ${ui.c.bold}${projectId}${ui.c.reset}`);
     console.log();
   } catch (err) {
@@ -61,20 +56,18 @@ async function autodeploy(projectId, opts) {
   }
 }
 
-// ── API key management ────────────────────────────────────────────────
 async function apiKey() {
-  const spin = ui.spinner('Fetching API key');
+  const spin = ui.spinner('Fetching API key info');
   try {
-    const data = await api.get('/api/account/api-key');
+    const data = await api.get('/api/v1/account');
     spin.stop();
+    const acc = data.account || {};
     ui.header('API Key');
     ui.divider();
-    ui.label('Key',        data.key || '—');
-    ui.label('Created',    data.createdAt ? new Date(data.createdAt).toLocaleString() : '—');
-    ui.label('Last Used',  data.lastUsed  ? new Date(data.lastUsed).toLocaleString()  : 'never');
-    ui.label('Status',     data.disabled ? `${ui.c.red}disabled${ui.c.reset}` : `${ui.c.green}active${ui.c.reset}`);
-    ui.label('Projects',   String(data.projectCount || 0));
-    if (data.transferUrl)  ui.label('Transfer URL', data.transferUrl);
+    ui.label('Email',     acc.email || '—');
+    ui.label('Name',      acc.name  || '—');
+    ui.label('Created',   acc.apiKey?.createdAt ? new Date(acc.apiKey.createdAt).toLocaleString() : '—');
+    ui.label('Last Used', acc.apiKey?.lastUsed  ? new Date(acc.apiKey.lastUsed).toLocaleString()  : 'never');
     console.log(`\n  ${ui.c.dim}To rotate your key run: joytree apikey rotate${ui.c.reset}\n`);
   } catch (err) {
     spin.stop();
@@ -89,7 +82,7 @@ async function rotateApiKey() {
     const data = await api.post('/api/account/api-key/rotate', {});
     spin.stop(`API key rotated!`);
     ui.label('New Key', data.key || '—');
-    ui.warn('Your old key is now revoked. Update your CLI: joytree login --api-key <new-key>');
+    ui.warn('Update your CLI: joytree login --api-key <new-key>');
     console.log();
   } catch (err) {
     spin.stop();
