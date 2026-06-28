@@ -4,7 +4,6 @@
 const { program } = require('commander');
 const pkg = require('../package.json');
 
-// Commands
 const auth    = require('../commands/auth');
 const deploy  = require('../commands/deploy');
 const projects= require('../commands/projects');
@@ -19,117 +18,91 @@ const ssh     = require('../commands/ssh');
 const extras  = require('../commands/extras');
 const ui      = require('../lib/ui');
 
-// ── Custom help screen ────────────────────────────────────────────────
 function showHelp() {
   const c = ui.c;
   ui.logo();
 
-  console.log(`${c.bold}USAGE${c.reset}`);
-  console.log(`  joytree ${c.cyan}<command>${c.reset} ${c.dim}[options]${c.reset}\n`);
-
-  const section = (title, icon) => {
-    console.log(`${c.bold}${c.white}${icon}  ${title}${c.reset}`);
+  // two-column row: left = cyan command, right = dim description
+  const row = (left, right) => {
+    const padded = left.padEnd(38);
+    console.log(`  ${c.cyan}${padded}${c.reset}${c.dim}${right}${c.reset}`);
   };
 
-  const cmd = (name, args, desc) => {
-    const nameCol = `${c.cyan}  joytree ${c.bold}${name}${c.reset}`;
-    const argsCol = args ? ` ${c.dim}${args}${c.reset}` : '';
-    const pad = Math.max(0, 42 - name.length - (args ? args.length + 1 : 0));
-    console.log(`${nameCol}${argsCol}${' '.repeat(pad)}${c.dim}${desc}${c.reset}`);
+  const section = (title) => {
+    console.log(`\n${c.bold}${title}${c.reset}`);
   };
 
-  // ── ACCOUNT ──
-  section('Account', '◆');
-  cmd('login',   '--api-key <key>',  'Validate and save your Joytree API key');
-  cmd('logout',  '',                  'Remove local credentials');
-  cmd('whoami',  '',                  'Show the active account and API key scope');
-  cmd('status',  '',                  'Show account status and project overview');
-  console.log();
+  section('Account');
+  row('joytree login --api-key <key>',     'Validate and save a Joytree API key');
+  row('joytree logout',                    'Remove local credentials');
+  row('joytree whoami',                    'Show the active account and API key scope');
+  row('joytree status',                    'Show account status and project overview');
 
-  // ── API KEY ──
-  section('API Key', '◆');
-  cmd('apikey show',   '',  'View your current API key and usage stats');
-  cmd('apikey rotate', '',  'Revoke old key and generate a new one');
-  console.log();
+  section('API Key');
+  row('joytree apikey show',               'View your current API key and usage stats');
+  row('joytree apikey rotate',             'Revoke old key and generate a new one');
 
-  // ── DEPLOY ──
-  section('Deploy', '◆');
-  cmd('deploy',      '-r <repo> -n <name>',   'Deploy a GitHub repo to Joytree');
-  cmd('redeploy',    '<project-id>',           'Trigger a fresh redeployment');
-  cmd('stop',        '<deploy-id>',            'Cancel a currently running deployment');
-  cmd('autodeploy',  '<project-id> --enable',  'Toggle GitHub push auto-deploy on/off');
-  cmd('deployments', '[project-id]',           'Show recent deployment history');
-  cmd('open',        '<project-id>',           'Open the live URL in your browser');
-  console.log();
+  section('Deploy');
+  row('joytree deploy -r <repo>',          'Deploy a GitHub repo to Joytree');
+  row('joytree deploy -m "message"',       'Deploy with a custom commit message');
+  row('joytree redeploy <project-id>',     'Trigger a fresh redeployment');
+  row('joytree stop <deploy-id>',          'Cancel a currently running deployment');
+  row('joytree autodeploy <id> --enable',  'Enable GitHub push auto-deploy');
+  row('joytree autodeploy <id> --disable', 'Disable GitHub push auto-deploy');
+  row('joytree deployments [project-id]',  'Show recent deployments');
+  row('joytree open <project-id>',         'Open the live URL in your browser');
 
-  // ── PROJECTS ──
-  section('Projects', '◆');
-  cmd('projects',    '',              'List all your projects');
-  cmd('inspect',     '<project-id>',  'Show full project details');
-  cmd('delete',      '<project-id>',  'Delete a project (irreversible)');
-  console.log();
+  section('Projects');
+  row('joytree projects',                  'List all your projects');
+  row('joytree inspect <project-id>',      'Show full project details');
+  row('joytree delete <project-id>',       'Delete a project (irreversible)');
 
-  // ── LOGS ──
-  section('Logs', '◆');
-  cmd('logs',  '<project-id>',           'Fetch recent runtime logs');
-  cmd('logs',  '<project-id> --follow',  'Stream live logs in real time');
-  console.log();
+  section('Logs');
+  row('joytree logs <project-id>',         'Fetch recent runtime logs');
+  row('joytree logs <id> --follow',        'Stream live project logs');
+  row('joytree logs <id> --lines 100',     'Fetch logs by line count');
 
-  // ── ENV VARS ──
-  section('Environment Variables', '◆');
-  cmd('env list',    '<project-id>',            'List all env var keys');
-  cmd('env set',     '<project-id> KEY=VALUE',  'Set one or more env vars');
-  cmd('env delete',  '<project-id> <KEY>',      'Delete an env var');
-  cmd('env push',    '<project-id>',            'Push a local .env file to a project');
-  console.log();
+  section('Project Config');
+  row('joytree env list <project-id>',     'List project env var keys');
+  row('joytree env set <id> KEY=VALUE',    'Set one or more env vars');
+  row('joytree env delete <id> <KEY>',     'Delete an env var');
+  row('joytree env push <project-id>',     'Push a local .env file to a project');
+  row('joytree env push <id> --force',     'Replace all existing env vars');
 
-  // ── GITHUB ──
-  section('GitHub', '◆');
-  cmd('pull repos',     '',           'List your linked GitHub repositories');
-  cmd('pull branches',  '<repo-url>', 'List branches for a repository');
-  console.log();
+  section('GitHub');
+  row('joytree pull repos',                'List your linked GitHub repositories');
+  row('joytree pull branches <repo-url>',  'List branches for a repository');
 
-  // ── DOMAINS ──
-  section('Domains', '◆');
-  cmd('domains list',    '',                        'List your custom domains');
-  cmd('domains attach',  '<domain> <project-id>',   'Attach a domain to a project');
-  cmd('domains verify',  '<domain>',                'Trigger DNS verification');
-  cmd('domains remove',  '<domain>',                'Remove a custom domain');
-  cmd('domains check',   '<domain>',                'Check domain availability');
-  console.log();
+  section('Domains');
+  row('joytree domains list',              'List your custom domains');
+  row('joytree domains attach <d> <id>',   'Attach a domain to a project');
+  row('joytree domains verify <domain>',   'Trigger DNS verification');
+  row('joytree domains remove <domain>',   'Remove a custom domain');
+  row('joytree domains check <domain>',    'Check domain availability');
 
-  // ── DATABASES ──
-  section('Databases', '◆');
-  cmd('db list',     '',        'List all databases');
-  cmd('db create',   '--type',  'Create a new database (postgres/mysql/redis/mongo)');
-  cmd('db start',    '<db-id>', 'Start a stopped database');
-  cmd('db stop',     '<db-id>', 'Stop a running database');
-  cmd('db restart',  '<db-id>', 'Restart a database');
-  cmd('db logs',     '<db-id>', 'Fetch recent database logs');
-  cmd('db delete',   '<db-id>', 'Delete a database (irreversible)');
-  console.log();
+  section('Databases');
+  row('joytree db list',                   'List all databases');
+  row('joytree db create --type <type>',   'Create a database (postgres/mysql/redis/mongo)');
+  row('joytree db start <db-id>',          'Start a stopped database');
+  row('joytree db stop <db-id>',           'Stop a running database');
+  row('joytree db restart <db-id>',        'Restart a database');
+  row('joytree db logs <db-id>',           'Fetch recent database logs');
+  row('joytree db delete <db-id>',         'Delete a database (irreversible)');
 
-  // ── WEBHOOK ──
-  section('Webhooks', '◆');
-  cmd('webhook secret', '', 'Show your global webhook secret');
-  cmd('webhook rotate', '', 'Regenerate your webhook secret');
-  console.log();
+  section('Webhooks');
+  row('joytree webhook secret',            'Show your global webhook secret');
+  row('joytree webhook rotate',            'Regenerate your webhook secret');
 
-  // ── SSH ──
-  section('SSH Keys', '◆');
-  cmd('ssh list',      '',          'List all SSH keys');
-  cmd('ssh generate',  '--name',    'Generate a new SSH key pair');
-  cmd('ssh delete',    '<key-id>',  'Delete an SSH key');
-  console.log();
+  section('SSH Keys');
+  row('joytree ssh list',                  'List all SSH keys');
+  row('joytree ssh generate --name <n>',   'Generate a new SSH key pair');
+  row('joytree ssh delete <key-id>',       'Delete an SSH key');
 
-  // ── ACTIVITY ──
-  section('Activity', '◆');
-  cmd('activity', '--limit <n>', 'Show recent platform activity feed');
-  console.log();
+  section('Activity');
+  row('joytree activity',                  'Show recent platform activity feed');
+  row('joytree activity --limit <n>',      'Limit number of events shown');
 
-  // ── FOOTER ──
-  console.log(`${c.dim}  Run ${c.cyan}joytree <command> --help${c.dim} for detailed options on any command.${c.reset}`);
-  console.log(`${c.dim}  Docs: ${c.cyan}https://docs.joytree.site${c.reset}\n`);
+  console.log();
 }
 
 program
@@ -137,139 +110,89 @@ program
   .description('Joytree CLI — deploy and manage your projects from the terminal')
   .version(pkg.version)
   .helpOption(false)
-  .addHelpCommand(false)
-  .option('-h, --help', 'Show this help screen')
-  .hook('preAction', (thisCommand) => {
-    if (thisCommand.opts().help) { showHelp(); process.exit(0); }
-  });
+  .addHelpCommand(false);
 
-// Override default --help
-program.on('--help', showHelp);
-
-// Show custom help when no args given
-if (process.argv.length === 2) {
-  showHelp();
-  process.exit(0);
-}
+if (process.argv.length === 2) { showHelp(); process.exit(0); }
 
 // ── Auth ──────────────────────────────────────────────────────────────
-program
-  .command('login')
-  .description('Authenticate with your Joytree API key')
-  .option('--api-key <key>', 'Provide API key directly (skips prompt)')
-  .action(auth.login);
-
-program
-  .command('logout')
-  .description('Remove saved credentials')
-  .action(auth.logout);
-
-program
-  .command('whoami')
-  .description('Show the active account and API key scope')
-  .action(auth.whoami);
-
-program
-  .command('status')
-  .description('Show account status, plan, and project count')
-  .action(account.status);
+program.command('login').option('--api-key <key>').action(auth.login);
+program.command('logout').action(auth.logout);
+program.command('whoami').action(auth.whoami);
+program.command('status').action(account.status);
 
 // ── API Key ───────────────────────────────────────────────────────────
-const apikeyGroup = program
-  .command('apikey')
-  .description('Manage your Joytree API key');
-
-apikeyGroup.command('show').description('Show your current API key and usage info').action(extras.apiKey);
-apikeyGroup.command('rotate').description('Generate a new API key and revoke the old one').action(extras.rotateApiKey);
+const apikeyGroup = program.command('apikey');
+apikeyGroup.command('show').action(extras.apiKey);
+apikeyGroup.command('rotate').action(extras.rotateApiKey);
 
 // ── Activity ──────────────────────────────────────────────────────────
-program
-  .command('activity')
-  .description('Show recent platform activity')
-  .option('--limit <n>', 'Number of events to show', '20')
-  .action(extras.activity);
+program.command('activity').option('--limit <n>', '', '20').action(extras.activity);
 
 // ── GitHub ────────────────────────────────────────────────────────────
-const pullGroup = program.command('pull').description('Browse connected GitHub repos and branches');
-pullGroup.command('repos').description('List your linked GitHub repositories').action(github.repos);
-pullGroup.command('branches <repo-url>').description('List branches for a repository').action(github.branches);
+const pullGroup = program.command('pull');
+pullGroup.command('repos').action(github.repos);
+pullGroup.command('branches <repo-url>').action(github.branches);
 
 // ── Deploy ────────────────────────────────────────────────────────────
-program
-  .command('deploy')
-  .description('Deploy a GitHub repository to Joytree')
-  .option('-r, --repo <url>', 'GitHub repository URL')
-  .option('-b, --branch <branch>', 'Branch to deploy', 'main')
-  .option('-n, --name <name>', 'Project name / subdomain')
-  .option('--build <cmd>', 'Build command')
-  .option('--start <cmd>', 'Start command')
-  .option('--static', 'Mark as a static site')
-  .option('-m, --message <msg>', 'Deployment message')
+program.command('deploy')
+  .option('-r, --repo <url>')
+  .option('-b, --branch <branch>', '', 'main')
+  .option('-n, --name <name>')
+  .option('--build <cmd>')
+  .option('--start <cmd>')
+  .option('--static')
+  .option('-m, --message <msg>')
   .action(deploy.deployGit);
 
-program.command('redeploy <project-id>').description('Trigger a fresh deployment').action(deploy.redeploy);
-program.command('stop <deploy-id>').description('Stop a currently running deployment').action(extras.stopDeploy);
-program
-  .command('autodeploy <project-id>')
-  .description('Toggle GitHub push auto-deploy')
-  .option('--enable',  'Enable auto-deploy')
-  .option('--disable', 'Disable auto-deploy')
-  .action(extras.autodeploy);
-program.command('open [project-id]').description('Open the live URL in your browser').action(deploy.open);
-program
-  .command('deployments [project-id]')
-  .description('Show recent deployments')
-  .option('--limit <n>', 'Number to show', '10')
-  .action(deploy.listDeployments);
+program.command('redeploy <project-id>').action(deploy.redeploy);
+program.command('stop <deploy-id>').action(extras.stopDeploy);
+program.command('autodeploy <project-id>').option('--enable').option('--disable').action(extras.autodeploy);
+program.command('open [project-id]').action(deploy.open);
+program.command('deployments [project-id]').option('--limit <n>', '', '10').action(deploy.listDeployments);
 
 // ── Projects ──────────────────────────────────────────────────────────
-program.command('projects').description('List all your projects').option('--json', 'Output raw JSON').action(projects.list);
-program.command('inspect <project-id>').description('Show full project details').action(projects.inspect);
-program.command('delete <project-id>').description('Delete a project (irreversible)').option('-y, --yes', 'Skip confirmation').action(projects.deleteProject);
+program.command('projects').option('--json').action(projects.list);
+program.command('inspect <project-id>').action(projects.inspect);
+program.command('delete <project-id>').option('-y, --yes').action(projects.deleteProject);
 
 // ── Logs ──────────────────────────────────────────────────────────────
-program
-  .command('logs <project-id>')
-  .description('Fetch runtime logs for a project')
-  .option('--lines <n>', 'Number of lines', '50')
-  .option('-f, --follow', 'Stream live logs')
-  .action(logs.fetchLogs);
+program.command('logs <project-id>').option('--lines <n>', '', '50').option('-f, --follow').action(logs.fetchLogs);
 
 // ── Env ───────────────────────────────────────────────────────────────
-const envGroup = program.command('env').description('Manage environment variables');
-envGroup.command('list <project-id>').description('List all env var keys').action(envCmd.list);
-envGroup.command('set <project-id> <KEY=VALUE...>').description('Set one or more env vars').action(envCmd.set);
-envGroup.command('delete <project-id> <KEY>').description('Delete an env var').action(envCmd.del);
-envGroup.command('push <project-id>').description('Push a .env file').option('--file <path>', 'Path to .env file', '.env').option('--force', 'Overwrite all existing vars').action(envCmd.push);
+const envGroup = program.command('env');
+envGroup.command('list <project-id>').action(envCmd.list);
+envGroup.command('set <project-id> <KEY=VALUE...>').action(envCmd.set);
+envGroup.command('delete <project-id> <KEY>').action(envCmd.del);
+envGroup.command('push <project-id>').option('--file <path>', '', '.env').option('--force').action(envCmd.push);
 
 // ── Domains ───────────────────────────────────────────────────────────
-const domainGroup = program.command('domains').description('Manage custom domains');
-domainGroup.command('list').description('List your custom domains').action(domains.list);
-domainGroup.command('attach <domain> <project-id>').description('Attach a domain to a project').action(domains.attach);
-domainGroup.command('verify <domain>').description('Trigger DNS verification').action(domains.verify);
-domainGroup.command('remove <domain>').description('Remove a custom domain').action(domains.remove);
-domainGroup.command('check <domain>').description('Check domain availability').action(domains.check);
+const domainGroup = program.command('domains');
+domainGroup.command('list').action(domains.list);
+domainGroup.command('attach <domain> <project-id>').action(domains.attach);
+domainGroup.command('verify <domain>').action(domains.verify);
+domainGroup.command('remove <domain>').action(domains.remove);
+domainGroup.command('check <domain>').action(domains.check);
 
 // ── Databases ─────────────────────────────────────────────────────────
-const dbGroup = program.command('db').description('Manage databases');
-dbGroup.command('list').description('List all databases').action(db.list);
-dbGroup.command('create').description('Create a new database').option('--type <type>', 'Database type', 'postgres').option('--name <name>', 'Database name').action(db.create);
-dbGroup.command('start <db-id>').description('Start a stopped database').action(db.start);
-dbGroup.command('stop <db-id>').description('Stop a running database').action(db.stop);
-dbGroup.command('restart <db-id>').description('Restart a database').action(db.restart);
-dbGroup.command('logs <db-id>').description('Fetch database logs').action(db.fetchLogs);
-dbGroup.command('delete <db-id>').description('Delete a database').option('-y, --yes', 'Skip confirmation').action(db.del);
+const dbGroup = program.command('db');
+dbGroup.command('list').action(db.list);
+dbGroup.command('create').option('--type <type>', '', 'postgres').option('--name <name>').action(db.create);
+dbGroup.command('start <db-id>').action(db.start);
+dbGroup.command('stop <db-id>').action(db.stop);
+dbGroup.command('restart <db-id>').action(db.restart);
+dbGroup.command('logs <db-id>').action(db.fetchLogs);
+dbGroup.command('delete <db-id>').option('-y, --yes').action(db.del);
 
 // ── Webhook ───────────────────────────────────────────────────────────
-const webhookGroup = program.command('webhook').description('Manage GitHub webhook secrets');
-webhookGroup.command('secret').description('Show your global webhook secret').action(webhook.getSecret);
-webhookGroup.command('rotate').description('Regenerate your webhook secret').action(webhook.rotateSecret);
+const webhookGroup = program.command('webhook');
+webhookGroup.command('secret').action(webhook.getSecret);
+webhookGroup.command('rotate').action(webhook.rotateSecret);
 
 // ── SSH ───────────────────────────────────────────────────────────────
-const sshGroup = program.command('ssh').description('Manage SSH keys');
-sshGroup.command('list').description('List all SSH keys').action(ssh.list);
-sshGroup.command('generate').description('Generate a new SSH key pair').option('--name <name>', 'Key name/label').action(ssh.generate);
-sshGroup.command('delete <key-id>').description('Delete an SSH key').option('-y, --yes', 'Skip confirmation').action(ssh.del);
+const sshGroup = program.command('ssh');
+sshGroup.command('list').action(ssh.list);
+sshGroup.command('generate').option('--name <name>').action(ssh.generate);
+sshGroup.command('delete <key-id>').option('-y, --yes').action(ssh.del);
 
 program.parseAsync(process.argv).catch(err => {
   console.error('Error:', err.message);
