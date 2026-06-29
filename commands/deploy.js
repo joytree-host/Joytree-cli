@@ -27,60 +27,59 @@ async function deployGit(opts) {
   }
 
   const spin = ui.spinner(`Deploying ${ui.c.bold}${name}${ui.c.reset}`);
-  try {
-    // Step 1: import the project via v1 API
-    const importBody = {
-      project: {
-        name,
-        subdomain: name,
-        repoUrl:      repo,
-        branch:       branch || 'main',
-        buildCommand: build  || '',
-        startCommand: start  || '',
-        isStatic:     !!isStatic,
-        autoDeploy:   false,
-      },
-      source: 'cli'
-    };
-    const imported = await api.post('/api/v1/import', importBody);
-    const projectId = imported.project?.id || imported.project?.subdomain || name;
 
-    // Step 2: trigger a redeploy to actually build it
-    await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
+  try {
+    // Check if project already exists
+    let projectId = null;
+    try {
+      const existing = await api.get(`/api/v1/projects/${encodeURIComponent(name)}`);
+      const p = existing.project || existing;
+      projectId = p.id || p.subdomain || name;
+    } catch (_) {
+      // Project doesn't exist yet — import it first
+      const importBody = {
+        project: {
+          name,
+          subdomain:    name,
+          repoUrl:      repo,
+          branch:       branch || 'main',
+          buildCommand: build  || '',
+          startCommand: start  || '',
+          isStatic:     !!isStatic,
+          autoDeploy:   false,
+        },
+        source: 'cli'
+      };
+      const imported = await api.post('/api/v1/import', importBody);
+      projectId = imported.project?.id || imported.project?.subdomain || name;
+    }
+
+    // Trigger the actual deployment
+    const result = await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
 
     spin.stop(`Deploy started!`);
     ui.header('Deployment');
-    ui.label('Project',  name);
-    ui.label('Repo',     repo);
-    ui.label('Branch',   branch || 'main');
-    ui.label('URL',      `https://${name}.joytree.site`);
+    ui.label('Project',   name);
+    ui.label('Repo',      repo);
+    ui.label('Branch',    branch || 'main');
+    ui.label('Deploy ID', result.deployId || '—');
+    ui.label('URL',       `https://${name}.joytree.site`);
     console.log(`\n${ui.c.dim}Watch logs: ${ui.c.cyan}joytree logs ${name} --follow${ui.c.reset}\n`);
+
   } catch (err) {
     spin.stop();
-    // If project already exists just trigger redeploy
-    if (err.message && err.message.includes('already exists')) {
-      try {
-        const spin2 = ui.spinner(`Project exists — triggering redeploy`);
-        await api.post(`/api/v1/projects/${encodeURIComponent(name)}/redeploy`, {});
-        spin2.stop(`Redeploy triggered for ${ui.c.bold}${name}${ui.c.reset}`);
-        ui.label('URL', `https://${name}.joytree.site`);
-        console.log();
-      } catch (e2) {
-        ui.error(`Deploy failed: ${e2.message}`);
-        process.exit(1);
-      }
-    } else {
-      ui.error(`Deploy failed: ${err.message}`);
-      process.exit(1);
-    }
+    ui.error(`Deploy failed: ${err.message}`);
+    process.exit(1);
   }
 }
 
 async function redeploy(projectId) {
   const spin = ui.spinner(`Redeploying ${projectId}`);
   try {
-    await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
+    const result = await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
     spin.stop(`Redeploy triggered for ${ui.c.bold}${projectId}${ui.c.reset}`);
+    if (result.deployId) ui.label('Deploy ID', result.deployId);
+    console.log();
   } catch (err) {
     spin.stop();
     ui.error(`Redeploy failed: ${err.message}`);
@@ -106,12 +105,12 @@ async function listDeployments(projectId, opts) {
       : `/api/v1/deployments?limit=${limit}`;
     const data  = await api.get(query);
     spin.stop();
-    const items = Array.isArray(data) ? data : (data.deployments || data.logs || data.items || []);
+    const items = Array.isArray(data) ? data : (data.logs || data.deployments || data.items || []);
     if (!items.length) { ui.info('No deployments found.'); return; }
     ui.header(`Recent Deployments${projectId ? ' — ' + projectId : ''}`);
     ui.divider();
     items.slice(0, limit).forEach(d => {
-      const ts = d.createdAt || d.startedAt ? new Date(d.createdAt || d.startedAt).toLocaleString() : '—';
+      const ts = d.startedAt || d.createdAt ? new Date(d.startedAt || d.createdAt).toLocaleString() : '—';
       console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.subdomain || d.projectId || '—'}${ui.c.reset}  ${ui.c.dim}${ts}${ui.c.reset}`);
     });
     console.log();
