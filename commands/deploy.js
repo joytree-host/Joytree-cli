@@ -29,43 +29,31 @@ async function deployGit(opts) {
   const spin = ui.spinner(`Deploying ${ui.c.bold}${name}${ui.c.reset}`);
 
   try {
-    // Check if project already exists
-    let projectId = null;
-    try {
-      const existing = await api.get(`/api/v1/projects/${encodeURIComponent(name)}`);
-      const p = existing.project || existing;
-      projectId = p.id || p.subdomain || name;
-    } catch (_) {
-      // Project doesn't exist yet — import it first
-      const importBody = {
-        project: {
-          name,
-          subdomain:    name,
-          repoUrl:      repo,
-          branch:       branch || 'main',
-          buildCommand: build  || '',
-          startCommand: start  || '',
-          isStatic:     !!isStatic,
-          autoDeploy:   false,
-        },
-        source: 'cli'
-      };
-      const imported = await api.post('/api/v1/import', importBody);
-      projectId = imported.project?.id || imported.project?.subdomain || name;
-    }
+    // POST directly to /api/v1/deploy which handles everything in one shot
+    const body = {
+      name,
+      subdomain:    name,
+      repoUrl:      repo,
+      branch:       branch || 'main',
+      buildCmd:     build  || '',
+      startCmd:     start  || '',
+      installCmd:   '',
+      siteType:     isStatic ? 'static' : (start ? 'server' : 'static'),
+      nodeVer:      '20',
+      outputDir:    '',
+      workingDir:   '',
+      source:       'cli',
+    };
 
-    // Trigger the actual deployment
-    const result = await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
-
+    const data = await api.post('/api/v1/deploy', body);
     spin.stop(`Deploy started!`);
     ui.header('Deployment');
     ui.label('Project',   name);
     ui.label('Repo',      repo);
     ui.label('Branch',    branch || 'main');
-    ui.label('Deploy ID', result.deployId || '—');
+    ui.label('Deploy ID', data.deployId || data.id || '—');
     ui.label('URL',       `https://${name}.joytree.site`);
     console.log(`\n${ui.c.dim}Watch logs: ${ui.c.cyan}joytree logs ${name} --follow${ui.c.reset}\n`);
-
   } catch (err) {
     spin.stop();
     ui.error(`Deploy failed: ${err.message}`);
@@ -76,9 +64,9 @@ async function deployGit(opts) {
 async function redeploy(projectId) {
   const spin = ui.spinner(`Redeploying ${projectId}`);
   try {
-    const result = await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
+    const data = await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
     spin.stop(`Redeploy triggered for ${ui.c.bold}${projectId}${ui.c.reset}`);
-    if (result.deployId) ui.label('Deploy ID', result.deployId);
+    if (data.deployId) ui.label('Deploy ID', data.deployId);
     console.log();
   } catch (err) {
     spin.stop();
