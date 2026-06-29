@@ -29,23 +29,22 @@ async function deployGit(opts) {
   const spin = ui.spinner(`Deploying ${ui.c.bold}${name}${ui.c.reset}`);
 
   try {
-    // POST directly to /api/v1/deploy which handles everything in one shot
-    const body = {
+    // Call /api/deploy directly — now that requireAuth accepts jtk_ keys
+    const data = await api.post('/api/deploy', {
       name,
-      subdomain:    name,
-      repoUrl:      repo,
-      branch:       branch || 'main',
-      buildCmd:     build  || '',
-      startCmd:     start  || '',
-      installCmd:   '',
-      siteType:     isStatic ? 'static' : (start ? 'server' : 'static'),
-      nodeVer:      '20',
-      outputDir:    '',
-      workingDir:   '',
-      source:       'cli',
-    };
+      subdomain:  name,
+      repoUrl:    repo,
+      branch:     branch || 'main',
+      buildCmd:   build  || '',
+      startCmd:   start  || '',
+      installCmd: '',
+      siteType:   isStatic ? 'static' : (start ? 'server' : 'static'),
+      nodeVer:    '20',
+      outputDir:  '',
+      workingDir: '',
+      source:     'cli',
+    });
 
-    const data = await api.post('/api/v1/deploy', body);
     spin.stop(`Deploy started!`);
     ui.header('Deployment');
     ui.label('Project',   name);
@@ -64,7 +63,24 @@ async function deployGit(opts) {
 async function redeploy(projectId) {
   const spin = ui.spinner(`Redeploying ${projectId}`);
   try {
-    const data = await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/redeploy`, {});
+    // Get full project details first so we can pass repoUrl etc to /api/deploy
+    const ws   = await api.get('/api/v1/transfer');
+    const proj = (ws.projects || []).find(p => p.subdomain === projectId || p.id === projectId || p.name === projectId);
+    if (!proj) { spin.stop(); ui.error(`Project "${projectId}" not found.`); process.exit(1); }
+
+    const data = await api.post('/api/deploy', {
+      name:       proj.name      || proj.subdomain,
+      subdomain:  proj.subdomain || proj.name,
+      repoUrl:    proj.repoUrl,
+      branch:     proj.branch    || 'main',
+      buildCmd:   proj.buildCommand || proj.buildCmd || '',
+      startCmd:   proj.startCommand || proj.startCmd || '',
+      installCmd: proj.installCmd   || '',
+      siteType:   proj.siteType     || (proj.isStatic ? 'static' : 'server'),
+      nodeVer:    proj.nodeVersion  || '20',
+      source:     'cli',
+    });
+
     spin.stop(`Redeploy triggered for ${ui.c.bold}${projectId}${ui.c.reset}`);
     if (data.deployId) ui.label('Deploy ID', data.deployId);
     console.log();
