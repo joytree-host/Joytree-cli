@@ -12,15 +12,15 @@ async function prompt(q) {
 async function list() {
   const spin = ui.spinner('Fetching databases');
   try {
-    const data = await api.get('/api/databases');
+    const data = await api.get('/api/v1/databases');
     spin.stop();
     const items = Array.isArray(data) ? data : (data.databases || []);
     if (!items.length) { ui.info('No databases yet. Create one: joytree db create'); return; }
     ui.header(`Databases (${items.length})`);
     ui.divider();
     items.forEach(d => {
-      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.name}${ui.c.reset}  ${ui.c.dim}[${d.type || 'db'}]  ${d.id}${ui.c.reset}`);
-      if (d.host) console.log(`     ${ui.c.dim}host: ${d.host}:${d.port || '—'}${ui.c.reset}`);
+      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.name}${ui.c.reset}  ${ui.c.dim}[${d.type||'db'}]  ${d.id}${ui.c.reset}`);
+      if (d.host) console.log(`     ${ui.c.dim}host: ${d.host}:${d.port||'—'}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {
@@ -36,13 +36,13 @@ async function create(opts) {
     name = await prompt(`${ui.c.bold}Database name:${ui.c.reset} `);
     if (!name) { ui.error('Name is required.'); process.exit(1); }
   }
-  const spin = ui.spinner(`Creating ${type} database "${name}"`);
+  const spin = ui.spinner(`Creating ${type||'postgres'} database "${name}"`);
   try {
     const data = await api.post('/api/databases', { type: type || 'postgres', name });
     spin.stop(`Database ${ui.c.bold}${name}${ui.c.reset} created!`);
-    if (data.id)   ui.label('ID',   data.id);
-    if (data.host) ui.label('Host', `${data.host}:${data.port || '—'}`);
-    if (data.connectionString) ui.label('DSN', data.connectionString);
+    if (data.id)               ui.label('ID',   data.id);
+    if (data.host)             ui.label('Host', `${data.host}:${data.port||'—'}`);
+    if (data.connectionString) ui.label('DSN',  data.connectionString);
     console.log();
   } catch (err) {
     spin.stop();
@@ -89,7 +89,7 @@ async function fetchLogs(dbId) {
 
 async function del(dbId, opts) {
   if (!opts.yes) {
-    const ans = await prompt(`${ui.c.yellow}Delete database "${dbId}"? This is irreversible. Type yes to confirm: ${ui.c.reset}`);
+    const ans = await prompt(`${ui.c.yellow}Delete database "${dbId}"? Type yes to confirm: ${ui.c.reset}`);
     if (ans.toLowerCase() !== 'yes') { ui.info('Cancelled.'); return; }
   }
   const spin = ui.spinner(`Deleting ${dbId}`);
