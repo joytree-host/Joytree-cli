@@ -12,15 +12,15 @@ async function prompt(q) {
 async function list() {
   const spin = ui.spinner('Fetching databases');
   try {
-    const data = await api.get('/api/v1/databases');
+    const data  = await api.get('/api/databases');
     spin.stop();
-    const items = Array.isArray(data) ? data : (data.databases || []);
+    const items = Array.isArray(data) ? data : (data.databases || data.dbs || []);
     if (!items.length) { ui.info('No databases yet. Create one: joytree db create'); return; }
     ui.header(`Databases (${items.length})`);
     ui.divider();
     items.forEach(d => {
-      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.name}${ui.c.reset}  ${ui.c.dim}[${d.type||'db'}]  ${d.id}${ui.c.reset}`);
-      if (d.host) console.log(`     ${ui.c.dim}host: ${d.host}:${d.port||'—'}${ui.c.reset}`);
+      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.name}${ui.c.reset}  ${ui.c.dim}[${d.type || 'db'}]  id: ${d.id || d._id}${ui.c.reset}`);
+      if (d.host) console.log(`     ${ui.c.dim}host: ${d.host}:${d.port || '—'}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {
@@ -36,13 +36,13 @@ async function create(opts) {
     name = await prompt(`${ui.c.bold}Database name:${ui.c.reset} `);
     if (!name) { ui.error('Name is required.'); process.exit(1); }
   }
-  const spin = ui.spinner(`Creating ${type||'postgres'} database "${name}"`);
+  const spin = ui.spinner(`Creating ${type || 'postgres'} database "${name}"`);
   try {
     const data = await api.post('/api/databases', { type: type || 'postgres', name });
     spin.stop(`Database ${ui.c.bold}${name}${ui.c.reset} created!`);
-    if (data.id)               ui.label('ID',   data.id);
-    if (data.host)             ui.label('Host', `${data.host}:${data.port||'—'}`);
-    if (data.connectionString) ui.label('DSN',  data.connectionString);
+    if (data.id || data._id)       ui.label('ID',   data.id || data._id);
+    if (data.host)                 ui.label('Host', `${data.host}:${data.port || '—'}`);
+    if (data.connectionString)     ui.label('DSN',  data.connectionString);
     console.log();
   } catch (err) {
     spin.stop();
@@ -52,10 +52,10 @@ async function create(opts) {
 }
 
 async function dbAction(dbId, action) {
-  const spin = ui.spinner(`${action} database ${dbId}`);
+  const spin = ui.spinner(`${action.charAt(0).toUpperCase() + action.slice(1)}ing database ${dbId}`);
   try {
     await api.post(`/api/databases/${encodeURIComponent(dbId)}/${action}`, {});
-    spin.stop(`Database ${ui.c.bold}${dbId}${ui.c.reset} ${action}ped.`);
+    spin.stop(`Database ${ui.c.bold}${dbId}${ui.c.reset} ${action}ed.`);
   } catch (err) {
     spin.stop();
     ui.error(`Failed: ${err.message}`);
@@ -70,13 +70,14 @@ const restart = dbId => dbAction(dbId, 'restart');
 async function fetchLogs(dbId) {
   const spin = ui.spinner(`Fetching logs for ${dbId}`);
   try {
-    const data = await api.get(`/api/databases/${encodeURIComponent(dbId)}/logs`);
+    const data  = await api.get(`/api/databases/${encodeURIComponent(dbId)}/logs`);
     spin.stop();
     const lines = Array.isArray(data) ? data : (data.logs || data.lines || []);
+    if (!lines.length) { ui.info('No log entries found.'); return; }
     ui.header(`DB Logs — ${dbId}`);
     ui.divider();
     lines.forEach(l => {
-      const msg = typeof l === 'string' ? l : (l.message || l.text || JSON.stringify(l));
+      const msg = typeof l === 'string' ? l : (l.message || l.text || l.log || JSON.stringify(l));
       console.log(`  ${ui.c.dim}${msg}${ui.c.reset}`);
     });
     console.log();
