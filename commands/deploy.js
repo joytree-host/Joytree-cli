@@ -129,15 +129,17 @@ async function pollStatus(projectId, timeoutMs = 300000) {
     while (Date.now() - start < timeoutMs) {
       await new Promise(r => setTimeout(r, 4000));
       try {
-        const data    = await api.get(`/api/v1/projects/${encodeURIComponent(projectId)}/logs?limit=1`);
-        const deploys = Array.isArray(data) ? data : (data.logs || data.deployments || []);
+        const data    = await api.get(`/api/deployments?projectId=${encodeURIComponent(projectId)}`);
+        const deploys = Array.isArray(data) ? data : (data.deployments || []);
         const latest  = deploys[0];
         if (latest) {
           const status = String(latest.status || '').toLowerCase();
           if (status === 'success') {
             clearInterval(iv);
             if (isTTY) process.stdout.write('\r\x1b[K');
-            ui.success(`Build ${ui.c.green}${ui.c.bold}succeeded${ui.c.reset}!`);
+            console.log(`\n${ui.c.green}${ui.c.bold}🎉 🎉 🎉  Congratulations! Your site is live!  🎉 🎉 🎉${ui.c.reset}\n`);
+            ui.label('Live URL', `${ui.c.cyan}${ui.c.bold}https://${projectId}.joytree.site${ui.c.reset}`);
+            console.log();
             return 'success';
           }
           if (status === 'failed' || status === 'error') {
@@ -244,7 +246,7 @@ async function deployGit(opts) {
     ui.label('Deploy ID', data.deployId || '—');
     console.log();
     await pollStatus(name);
-    console.log(`\n${ui.c.dim}Logs: ${ui.c.cyan}joytree logs ${name} --follow${ui.c.reset}\n`);
+    console.log(`${ui.c.dim}View logs: ${ui.c.cyan}joytree logs ${name} --follow${ui.c.reset}\n`);
 
   } catch (err) {
     spin.stop();
@@ -305,17 +307,18 @@ async function listDeployments(projectId, opts) {
   const spin  = ui.spinner('Fetching deployments');
   try {
     const query = projectId
-      ? `/api/v1/projects/${encodeURIComponent(projectId)}/logs?limit=${limit}`
-      : `/api/v1/deployments?limit=${limit}`;
+      ? `/api/deployments?projectId=${encodeURIComponent(projectId)}`
+      : `/api/deployments?mine=1`;
     const data  = await api.get(query);
     spin.stop();
-    const items = Array.isArray(data) ? data : (data.logs || data.deployments || data.items || []);
+    const items = Array.isArray(data) ? data : (data.deployments || data.items || []);
     if (!items.length) { ui.info('No deployments found.'); return; }
     ui.header(`Recent Deployments${projectId ? ' — ' + projectId : ''}`);
     ui.divider();
     items.slice(0, limit).forEach(d => {
       const ts = d.startedAt || d.createdAt ? new Date(d.startedAt || d.createdAt).toLocaleString() : '—';
-      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.subdomain || d.projectId || '—'}${ui.c.reset}  ${ui.c.dim}${ts}${ui.c.reset}`);
+      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.projectName || d.subdomain || d.projectId || '—'}${ui.c.reset}  ${ui.c.dim}${ts}${ui.c.reset}`);
+      if (d.branch) console.log(`     ${ui.c.dim}branch: ${d.branch}${d.duration ? `  ${d.duration}s` : ''}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {

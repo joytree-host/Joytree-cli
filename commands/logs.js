@@ -1,84 +1,112 @@
 'use strict';
 
-const { api } = require('../lib/api');
+const https   = require('https');
+const http    = require('http');
+const { URL } = require('url');
+const config  = require('../lib/config');
 const ui      = require('../lib/ui');
 
-function printLine(entry) {
-  if (typeof entry === 'string') {
-    console.log(`  ${entry}`);
-    return;
-  }
-  const ts  = entry.timestamp || entry.time || entry.createdAt || '';
-  const msg = entry.message   || entry.text || entry.log || entry.line
-           || entry.output    || entry.data || JSON.stringify(entry);
-  const lvl = String(entry.level || entry.type || '').toLowerCase();
-  const time = ts ? `${ui.c.dim}[${new Date(ts).toLocaleTimeString()}]${ui.c.reset} ` : '';
-  const colored = lvl === 'error' || lvl === 'stderr' ? `${ui.c.red}${msg}${ui.c.reset}`
-                : lvl === 'warn'                      ? `${ui.c.yellow}${msg}${ui.c.reset}`
-                : msg;
-  console.log(`  ${time}${colored}`);
+function printLine(text, level) {
+  const lvl = String(level || '').toLowerCase();
+  const colored = lvl === 'error' || lvl === 'stderr' ? `${ui.c.red}${text}${ui.c.reset}`
+                : lvl === 'warn'                      ? `${ui.c.yellow}${text}${ui.c.reset}`
+                : text;
+  console.log(`  ${colored}`);
 }
 
-function normalizeEntries(data) {
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.logs))        return data.logs;
-  if (data && Array.isArray(data.lines))       return data.lines;
-  if (data && Array.isArray(data.deployments)) return data.deployments;
-  if (data && Array.isArray(data.entries))     return data.entries;
-  if (data && typeof data === 'object') {
-    // Sometimes logs come back as { "0": "line1", "1": "line2" }
-    const vals = Object.values(data);
-    if (vals.length) return vals;
-  }
-  return [];
+// Runtime logs are streamed via Server-Sent Events (SSE), not plain JSON.
+// This connects directly and prints each event as it arrives.
+function streamRuntimeLogs(projectId, opts) {
+  const apiKey  = config.getApiKey();
+  const baseUrl = config.getBaseUrl();
+  if (!apiKey) { ui.error('Not logged in. Run: joytree login'); process.exit(1); }
+
+  const url = new URL(`${baseUrl}/api/projects/${encodeURIComponent(projectId)}/runtime-logs`);
+  const mod = url.protocol === 'https:' ? https : http;
+
+  ui.info(`Streaming logs for ${ui.c.bold}${projectId}${ui.c.reset} ${ui.c.dim}(Ctrl+C to stop)${ui.c.reset}`);
+  ui.divider();
+
+  const req = mod.request({
+    hostname: url.hostname,
+    port:     url.port || (url.protocol === 'https:' ? 443 : 80),
+    path:     url.pathname + url.search,
+    method:   'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Accept':        'text/event-stream',
+      'User-Agent':    `joytree-cli/${require('../package.json').version}`,
+    },
+  }, (res) => {
+    if (res.statusCode === 404) {
+      ui.error(`Project "${projectId}" not found.`);
+      process.exit(1);
+    }
+    if (res.statusCode >= 400) {
+      ui.error(`Failed to connect to log stream (HTTP ${res.statusCode}).`);
+      process.exit(1);
+    }
+
+    let buffer = '';
+    res.setEncoding('utf8');
+    res.on('data', chunk => {
+      buffer += chunk;
+      const events = buffer.split('\n\n');
+      buffer = events.pop(); // keep incomplete event in buffer
+
+      for (const block of events) {
+        if (!block.trim()) continue;
+        const lines = block.split('\n');
+        let eventType = 'message';
+        let dataStr   = '';
+        for (const line of lines) {
+          if (line.startsWith('event:')) eventType = line.slice(6).trim();
+          if (line.startsWith('data:'))  dataStr   += line.slice(5).trim();
+        }
+        if (!dataStr) continue;
+        try {
+          const parsed = JSON.parse(dataStr);
+          if (eventType === 'log' || eventType === 'message') {
+            const text = parsed.message || parsed.text || parsed.line || (typeof parsed === 'string' ? parsed : JSON.stringify(parsed));
+            printLine(text, parsed.level);
+          } else if (eventType === 'error') {
+            ui.error(parsed.message || parsed.error || 'Stream error');
+          }
+          // ignore keepalive/ping events silently
+        } catch (_) {
+          if (dataStr && dataStr !== 'ping') printLine(dataStr);
+        }
+      }
+    });
+
+    res.on('end', () => {
+      ui.info('Log stream ended.');
+      process.exit(0);
+    });
+  });
+
+  req.on('error', (err) => {
+    ui.error(`Connection error: ${err.message}`);
+    process.exit(1);
+  });
+
+  req.end();
+
+  process.on('SIGINT', () => {
+    req.destroy();
+    console.log();
+    process.exit(0);
+  });
 }
 
 async function fetchLogs(projectId, opts) {
-  const lines = parseInt(opts.lines, 10) || 50;
+  // Runtime logs are always a live SSE stream on this platform.
+  // --follow just keeps it open; without it we still connect but exit after first burst.
+  streamRuntimeLogs(projectId, opts);
 
-  if (opts.follow) {
-    ui.info(`Streaming logs for ${ui.c.bold}${projectId}${ui.c.reset} (Ctrl+C to stop)`);
-    ui.divider();
-    let seen = new Set();
-
-    const poll = async () => {
-      try {
-        const data    = await api.get(`/api/v1/projects/${encodeURIComponent(projectId)}/logs?limit=${lines}`);
-        const entries = normalizeEntries(data);
-        const fresh   = entries.filter(e => {
-          const key = typeof e === 'string' ? e
-            : (e.timestamp || e.time || '') + (e.message || e.text || e.log || JSON.stringify(e));
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        fresh.forEach(printLine);
-      } catch (err) {
-        ui.warn(`Log fetch error: ${err.message}`);
-      }
-    };
-
-    await poll();
-    const iv = setInterval(poll, 3000);
-    process.on('SIGINT', () => { clearInterval(iv); console.log(); process.exit(0); });
-    await new Promise(() => {});
-    return;
-  }
-
-  const spin = ui.spinner(`Fetching logs for ${projectId}`);
-  try {
-    const data    = await api.get(`/api/v1/projects/${encodeURIComponent(projectId)}/logs?limit=${lines}`);
-    spin.stop();
-    const entries = normalizeEntries(data);
-    if (!entries.length) { ui.info('No log entries found.'); return; }
-    ui.header(`Logs — ${projectId} (last ${entries.length})`);
-    ui.divider();
-    entries.forEach(printLine);
-    console.log();
-  } catch (err) {
-    spin.stop();
-    ui.error(`Failed: ${err.message}`);
-    process.exit(1);
+  if (!opts.follow) {
+    // Auto-close after a short grace period if not following
+    setTimeout(() => process.exit(0), 5000);
   }
 }
 
