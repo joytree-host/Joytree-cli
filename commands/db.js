@@ -4,9 +4,51 @@ const readline = require('readline');
 const { api }  = require('../lib/api');
 const ui       = require('../lib/ui');
 
-async function prompt(q) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(r => rl.question(q, a => { rl.close(); r(a.trim()); }));
+const ENGINES = [
+  { key: 'postgres', label: 'PostgreSQL', defaultUser: 'postgres', defaultDb: 'postgres' },
+  { key: 'mysql',    label: 'MySQL',      defaultUser: 'root',     defaultDb: 'mysql'    },
+  { key: 'mariadb',  label: 'MariaDB',    defaultUser: 'root',     defaultDb: 'mariadb'  },
+  { key: 'mongodb',  label: 'MongoDB',    defaultUser: 'admin',    defaultDb: 'admin'    },
+  { key: 'redis',    label: 'Redis',      defaultUser: '',         defaultDb: ''         },
+];
+
+function rl() {
+  return readline.createInterface({ input: process.stdin, output: process.stdout });
+}
+
+async function ask(question, defaultVal = '') {
+  const r = rl();
+  const suffix = defaultVal ? ` ${ui.c.dim}[${defaultVal}]${ui.c.reset}` : '';
+  return new Promise(resolve => r.question(`${question}${suffix}: `, ans => {
+    r.close();
+    resolve(ans.trim() || defaultVal);
+  }));
+}
+
+async function askHidden(question, defaultVal = '') {
+  // Simple hidden-ish password prompt (best effort in plain readline)
+  return ask(question, defaultVal);
+}
+
+async function choose(question, options) {
+  const c = ui.c;
+  console.log(`\n${c.bold}${question}${c.reset}`);
+  options.forEach((o, i) => console.log(`  ${c.cyan}${i + 1}${c.reset}  ${o.label}`));
+  const r = rl();
+  return new Promise(resolve => {
+    r.question(`\n${c.bold}Choice${c.reset} ${c.dim}[1-${options.length}]${c.reset}: `, ans => {
+      r.close();
+      const idx = parseInt(ans.trim(), 10) - 1;
+      resolve(options[idx] || options[0]);
+    });
+  });
+}
+
+function randomPassword(len = 16) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
 }
 
 async function list() {
@@ -19,8 +61,8 @@ async function list() {
     ui.header(`Databases (${items.length})`);
     ui.divider();
     items.forEach(d => {
-      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.name}${ui.c.reset}  ${ui.c.dim}[${d.type || 'db'}]  id: ${d.id || d._id}${ui.c.reset}`);
-      if (d.host) console.log(`     ${ui.c.dim}host: ${d.host}:${d.port || '—'}${ui.c.reset}`);
+      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.name}${ui.c.reset}  ${ui.c.dim}[${d.engine || d.type || 'db'}]  id: ${d.id || d._id}${ui.c.reset}`);
+      if (d.connStr || d.connectionString) console.log(`     ${ui.c.dim}${d.connStr || d.connectionString}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {
@@ -32,18 +74,64 @@ async function list() {
 
 async function create(opts) {
   let { type, name } = opts;
-  if (!name) {
-    name = await prompt(`${ui.c.bold}Database name:${ui.c.reset} `);
-    if (!name) { ui.error('Name is required.'); process.exit(1); }
+
+  // Engine selection
+  let engine = ENGINES.find(e => e.key === type);
+  if (!engine) {
+    engine = await choose('Select a database engine:', ENGINES);
   }
-  const spin = ui.spinner(`Creating ${type || 'postgres'} database "${name}"`);
+
+  // Name
+  if (!name) {
+    name = await ask(`${ui.c.bold}Database name${ui.c.reset}`, `joytree-${engine.key}`);
+  }
+
+  // Credentials — skip for redis (uses password only, no user/db)
+  let dbUser = '', dbPass = '', dbName = '';
+  if (engine.key !== 'redis') {
+    dbUser = await ask(`${ui.c.bold}Database user${ui.c.reset}`, engine.defaultUser);
+    dbPass = await askHidden(`${ui.c.bold}Database password${ui.c.reset} ${ui.c.dim}(blank = auto-generate)${ui.c.reset}`, '');
+    if (!dbPass) dbPass = randomPassword();
+    dbName = await ask(`${ui.c.bold}Initial database name${ui.c.reset}`, engine.defaultDb);
+  } else {
+    dbPass = await askHidden(`${ui.c.bold}Redis password${ui.c.reset} ${ui.c.dim}(blank = auto-generate)${ui.c.reset}`, '');
+    if (!dbPass) dbPass = randomPassword();
+  }
+
+  // Memory
+  const memChoice = await choose('Memory allocation:', [
+    { label: '128 MB  — light workloads', val: '128m' },
+    { label: '256 MB  — default',         val: '256m' },
+    { label: '512 MB  — heavier usage',   val: '512m' },
+    { label: '1 GB    — production',      val: '1g'   },
+  ]);
+
+  console.log(`\n${ui.c.bold}Database Summary${ui.c.reset}`);
+  ui.divider();
+  ui.label('Name',   name);
+  ui.label('Engine', engine.label);
+  if (dbUser) ui.label('User', dbUser);
+  if (dbName) ui.label('DB',   dbName);
+  ui.label('Password', `${ui.c.dim}${'•'.repeat(Math.min(dbPass.length, 16))}${ui.c.reset}`);
+  ui.label('Memory', memChoice.val);
+  console.log();
+
+  const spin = ui.spinner(`Creating ${engine.label} database "${name}"`);
   try {
-    const data = await api.post('/api/databases', { type: type || 'postgres', name });
-    spin.stop(`Database ${ui.c.bold}${name}${ui.c.reset} created!`);
-    if (data.id || data._id)       ui.label('ID',   data.id || data._id);
-    if (data.host)                 ui.label('Host', `${data.host}:${data.port || '—'}`);
-    if (data.connectionString)     ui.label('DSN',  data.connectionString);
-    console.log();
+    const data = await api.post('/api/databases', {
+      name,
+      engine: engine.key,
+      user:   dbUser || undefined,
+      pass:   dbPass,
+      dbName: dbName || undefined,
+      memory: memChoice.val,
+    });
+    spin.stop(`Database ${ui.c.bold}${name}${ui.c.reset} is being provisioned!`);
+    if (data.id) ui.label('ID', data.id);
+    ui.label('Status', data.status || 'provisioning');
+    console.log(`\n  ${ui.c.dim}Save your password — it won't be shown again:${ui.c.reset}`);
+    console.log(`  ${ui.c.yellow}${dbPass}${ui.c.reset}`);
+    console.log(`\n  ${ui.c.dim}Check status: ${ui.c.cyan}joytree db list${ui.c.reset}\n`);
   } catch (err) {
     spin.stop();
     ui.error(`Failed: ${err.message}`);
@@ -90,7 +178,7 @@ async function fetchLogs(dbId) {
 
 async function del(dbId, opts) {
   if (!opts.yes) {
-    const ans = await prompt(`${ui.c.yellow}Delete database "${dbId}"? Type yes to confirm: ${ui.c.reset}`);
+    const ans = await ask(`${ui.c.yellow}Delete database "${dbId}"? Type yes to confirm${ui.c.reset}`, '');
     if (ans.toLowerCase() !== 'yes') { ui.info('Cancelled.'); return; }
   }
   const spin = ui.spinner(`Deleting ${dbId}`);
