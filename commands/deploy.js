@@ -126,7 +126,7 @@ async function resolveProjectId(projectId) {
   }
 }
 
-// ── Poll build status ─────────────────────────────────────────────────────────
+// ── Poll build status — uses /api/workspace (Firebase-backed, no Mongo) ───────
 async function pollStatus(projectId, timeoutMs = 300000) {
   const start  = Date.now();
   const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
@@ -138,17 +138,17 @@ async function pollStatus(projectId, timeoutMs = 300000) {
     process.stdout.write(`\r${ui.c.cyan}${frames[i++ % frames.length]}${ui.c.reset} Building... ${ui.c.dim}(Ctrl+C to detach)${ui.c.reset}`);
   }, 100);
 
-  // Give the server a moment to create the Deployment record, then resolve real ID
-  await new Promise(r => setTimeout(r, 2000));
-  const realId = await resolveProjectId(projectId);
-
   try {
     while (Date.now() - start < timeoutMs) {
       await new Promise(r => setTimeout(r, 4000));
       try {
-        const data    = await api.get(`/api/deployments?projectId=${encodeURIComponent(realId)}`);
-        const deploys = Array.isArray(data) ? data : (data.deployments || []);
-        const latest  = deploys[0];
+        const ws = await api.get('/api/workspace');
+        const deploys = Array.isArray(ws.deployments) ? ws.deployments : [];
+        // Match on subdomain or projectId — Firebase records store both
+        const latest = deploys.find(d =>
+          d.subdomain === projectId || d.projectId === projectId || d.name === projectId
+        ) || deploys[0];
+
         if (latest) {
           const status = String(latest.status || '').toLowerCase();
           if (status === 'success') {
@@ -323,22 +323,18 @@ async function listDeployments(projectId, opts) {
   const limit = parseInt(opts.limit, 10) || 10;
   const spin  = ui.spinner('Fetching deployments');
   try {
-    let query;
-    if (projectId) {
-      const realId = await resolveProjectId(projectId);
-      query = `/api/deployments?projectId=${encodeURIComponent(realId)}`;
-    } else {
-      query = `/api/deployments?mine=1`;
-    }
-    const data  = await api.get(query);
+    const ws    = await api.get('/api/workspace');
     spin.stop();
-    const items = Array.isArray(data) ? data : (data.deployments || data.items || []);
+    let items = Array.isArray(ws.deployments) ? ws.deployments : [];
+    if (projectId) {
+      items = items.filter(d => d.subdomain === projectId || d.projectId === projectId || d.name === projectId);
+    }
     if (!items.length) { ui.info('No deployments found.'); return; }
     ui.header(`Recent Deployments${projectId ? ' — ' + projectId : ''}`);
     ui.divider();
     items.slice(0, limit).forEach(d => {
       const ts = d.startedAt || d.createdAt ? new Date(d.startedAt || d.createdAt).toLocaleString() : '—';
-      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.projectName || d.subdomain || d.projectId || '—'}${ui.c.reset}  ${ui.c.dim}${ts}${ui.c.reset}`);
+      console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.subdomain || d.projectName || d.projectId || '—'}${ui.c.reset}  ${ui.c.dim}${ts}${ui.c.reset}`);
       if (d.branch) console.log(`     ${ui.c.dim}branch: ${d.branch}${d.duration ? `  ${d.duration}s` : ''}${ui.c.reset}`);
     });
     console.log();
