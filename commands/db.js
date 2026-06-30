@@ -44,11 +44,59 @@ async function choose(question, options) {
   });
 }
 
-function randomPassword(len = 16) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  let out = '';
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+function buildSnippet(engine, externalConn) {
+  switch (engine) {
+    case 'postgres':
+      return [
+        ['Node.js (pg)', `const { Client } = require('pg');\nconst client = new Client({ connectionString: '${externalConn}' });\nawait client.connect();`],
+        ['Python (psycopg2)', `import psycopg2\nconn = psycopg2.connect('${externalConn}')`],
+        ['Prisma (.env)', `DATABASE_URL="${externalConn}"`],
+      ];
+    case 'mysql':
+    case 'mariadb':
+      return [
+        ['Node.js (mysql2)', `const mysql = require('mysql2/promise');\nconst conn = await mysql.createConnection('${externalConn}');`],
+        ['Python (PyMySQL)', `import pymysql\nconn = pymysql.connect(host='HOST', user='USER', password='PASS', database='DB')`],
+        ['Prisma (.env)', `DATABASE_URL="${externalConn}"`],
+      ];
+    case 'mongodb':
+      return [
+        ['Node.js (mongoose)', `const mongoose = require('mongoose');\nawait mongoose.connect('${externalConn}');`],
+        ['Node.js (MongoClient)', `const { MongoClient } = require('mongodb');\nconst client = new MongoClient('${externalConn}');\nawait client.connect();`],
+        ['Python (pymongo)', `from pymongo import MongoClient\nclient = MongoClient('${externalConn}')`],
+      ];
+    case 'redis':
+      return [
+        ['Node.js (ioredis)', `const Redis = require('ioredis');\nconst redis = new Redis('${externalConn}');`],
+        ['Node.js (redis)', `const { createClient } = require('redis');\nconst client = createClient({ url: '${externalConn}' });\nawait client.connect();`],
+        ['Python (redis-py)', `import redis\nr = redis.from_url('${externalConn}')`],
+      ];
+    default:
+      return [];
+  }
+}
+
+async function pollDbReady(dbId, timeoutMs = 60000) {
+  const start = Date.now();
+  const spin  = ui.spinner('Waiting for database to come online');
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const data  = await api.get('/api/databases');
+      const items = Array.isArray(data) ? data : (data.databases || data.dbs || []);
+      const found = items.find(d => String(d.id || d._id) === String(dbId));
+      if (found && String(found.status || '').toLowerCase() === 'running') {
+        spin.stop();
+        return found;
+      }
+      if (found && String(found.status || '').toLowerCase() === 'failed') {
+        spin.stop();
+        return found;
+      }
+    } catch (_) {}
+  }
+  spin.stop();
+  return null;
 }
 
 async function list() {
@@ -117,8 +165,9 @@ async function create(opts) {
   console.log();
 
   const spin = ui.spinner(`Creating ${engine.label} database "${name}"`);
+  let createData;
   try {
-    const data = await api.post('/api/databases', {
+    createData = await api.post('/api/databases', {
       name,
       engine: engine.key,
       user:   dbUser || undefined,
@@ -126,17 +175,56 @@ async function create(opts) {
       dbName: dbName || undefined,
       memory: memChoice.val,
     });
-    spin.stop(`Database ${ui.c.bold}${name}${ui.c.reset} is being provisioned!`);
-    if (data.id) ui.label('ID', data.id);
-    ui.label('Status', data.status || 'provisioning');
-    console.log(`\n  ${ui.c.dim}Save your password — it won't be shown again:${ui.c.reset}`);
-    console.log(`  ${ui.c.yellow}${dbPass}${ui.c.reset}`);
-    console.log(`\n  ${ui.c.dim}Check status: ${ui.c.cyan}joytree db list${ui.c.reset}\n`);
   } catch (err) {
     spin.stop();
     ui.error(`Failed: ${err.message}`);
     process.exit(1);
   }
+  spin.stop();
+
+  const dbId = createData.id || createData._id;
+  const ready = await pollDbReady(dbId);
+
+  if (!ready) {
+    ui.warn('Database is still provisioning. Check status with: joytree db list');
+    console.log(`\n  ${ui.c.dim}Save your password — it won't be shown again:${ui.c.reset}`);
+    console.log(`  ${ui.c.yellow}${dbPass}${ui.c.reset}\n`);
+    return;
+  }
+
+  if (String(ready.status || '').toLowerCase() === 'failed') {
+    ui.error(`Database provisioning failed: ${ready.error || 'Unknown error'}`);
+    process.exit(1);
+  }
+
+  // Success — show internal + external connection strings, like the dashboard does
+  console.log(`\n${ui.c.green}${ui.c.bold}🎉 🎉 🎉  Database "${name}" is live!  🎉 🎉 🎉${ui.c.reset}\n`);
+
+  const internalConn = ready.connStr || ready.connectionString || '';
+  const externalConn = ready.externalConnectionString || internalConn;
+
+  ui.header('Connection Strings');
+  ui.divider();
+  ui.label('Internal', `${ui.c.cyan}${internalConn || '—'}${ui.c.reset}`);
+  console.log(`  ${ui.c.dim}Use this from other projects deployed on Joytree (same host).${ui.c.reset}`);
+  console.log();
+  ui.label('External', `${ui.c.cyan}${externalConn || '—'}${ui.c.reset}`);
+  console.log(`  ${ui.c.dim}Use this to connect from outside Joytree (your laptop, another server).${ui.c.reset}`);
+
+  console.log(`\n  ${ui.c.dim}Save your password — it won't be shown again:${ui.c.reset}`);
+  console.log(`  ${ui.c.yellow}${dbPass}${ui.c.reset}`);
+
+  const snippets = buildSnippet(engine.key, externalConn || internalConn);
+  if (snippets.length) {
+    ui.header('Quick Connect Snippets');
+    ui.divider();
+    snippets.forEach(([label, code]) => {
+      console.log(`\n  ${ui.c.bold}${ui.c.cyan}${label}${ui.c.reset}`);
+      code.split('\n').forEach(line => console.log(`  ${ui.c.dim}${line}${ui.c.reset}`));
+    });
+  }
+
+  console.log(`\n  ${ui.c.dim}Manage: ${ui.c.cyan}joytree db list${ui.c.reset}${ui.c.dim} · ${ui.c.cyan}joytree db logs ${dbId}${ui.c.reset}\n`);
 }
 
 async function dbAction(dbId, action) {
