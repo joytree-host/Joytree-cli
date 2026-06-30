@@ -113,6 +113,19 @@ async function buildSettingsWizard(defaults = {}) {
   return { install, build, start, output, siteType, nodeVer, framework: fw.key };
 }
 
+// Resolve a project's real internal ID from its subdomain/name via /api/v1/transfer
+async function resolveProjectId(projectId) {
+  try {
+    const ws = await api.get('/api/v1/transfer');
+    const proj = (ws.projects || []).find(p =>
+      p.subdomain === projectId || p.id === projectId || p._id === projectId || p.name === projectId
+    );
+    return proj ? (proj.id || proj._id || projectId) : projectId;
+  } catch (_) {
+    return projectId;
+  }
+}
+
 // ── Poll build status ─────────────────────────────────────────────────────────
 async function pollStatus(projectId, timeoutMs = 300000) {
   const start  = Date.now();
@@ -125,11 +138,15 @@ async function pollStatus(projectId, timeoutMs = 300000) {
     process.stdout.write(`\r${ui.c.cyan}${frames[i++ % frames.length]}${ui.c.reset} Building... ${ui.c.dim}(Ctrl+C to detach)${ui.c.reset}`);
   }, 100);
 
+  // Give the server a moment to create the Deployment record, then resolve real ID
+  await new Promise(r => setTimeout(r, 2000));
+  const realId = await resolveProjectId(projectId);
+
   try {
     while (Date.now() - start < timeoutMs) {
       await new Promise(r => setTimeout(r, 4000));
       try {
-        const data    = await api.get(`/api/deployments?projectId=${encodeURIComponent(projectId)}`);
+        const data    = await api.get(`/api/deployments?projectId=${encodeURIComponent(realId)}`);
         const deploys = Array.isArray(data) ? data : (data.deployments || []);
         const latest  = deploys[0];
         if (latest) {
@@ -306,9 +323,13 @@ async function listDeployments(projectId, opts) {
   const limit = parseInt(opts.limit, 10) || 10;
   const spin  = ui.spinner('Fetching deployments');
   try {
-    const query = projectId
-      ? `/api/deployments?projectId=${encodeURIComponent(projectId)}`
-      : `/api/deployments?mine=1`;
+    let query;
+    if (projectId) {
+      const realId = await resolveProjectId(projectId);
+      query = `/api/deployments?projectId=${encodeURIComponent(realId)}`;
+    } else {
+      query = `/api/deployments?mine=1`;
+    }
     const data  = await api.get(query);
     spin.stop();
     const items = Array.isArray(data) ? data : (data.deployments || data.items || []);
