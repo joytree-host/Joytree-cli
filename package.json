@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node bin/joytree.js",
     "prepublishOnly": "npm version patch --no-git-tag-version",
-    "postpublish": "git add package.json && (git commit -m \"chore: bump version to $npm_package_version\" || true) && (git push origin main || true)"
+    "postpublish": "git add package.json && (git commit -m \"chore: bump version to $npm_package_version\" || true) && (GIT_TERMINAL_PROMPT=0 git push origin main || echo 'Note: could not auto-push the version bump to git (no push credentials configured on this machine) — the npm publish itself succeeded. Run git push manually, or see git remote set-url instructions.')"
   },
   "keywords": [
     "joytree",
