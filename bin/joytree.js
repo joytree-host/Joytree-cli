@@ -25,99 +25,107 @@ function showHelp() {
   const c = ui.c;
   ui.logo();
 
-  const row = (left, right) => {
-    const padded = left.padEnd(40);
-    console.log(`  ${c.cyan}${padded}${c.reset}${c.dim}${right}${c.reset}`);
+  // Iconic layout: green bullet + bold green command + gray description
+  // Completely different from pxxl's plain two-column style
+  const row = (cmd, desc) => {
+    console.log(`  ${c.dgreen}▸${c.reset} ${c.bold}${c.green}${cmd.padEnd(38)}${c.reset} ${c.gray}${desc}${c.reset}`);
   };
-  const section = (title) => console.log(`\n${c.bold}${title}${c.reset}`);
+  const section = (icon, title) => {
+    console.log(`\n${c.bold}${c.dgreen}${icon} ${title}${c.reset}`);
+    console.log(`${c.dgreen}${'╌'.repeat(52)}${c.reset}`);
+  };
 
-  section('Account');
+  section('◈', 'Account');
   row('joytree login --api-key <key>',       'Validate and save a Joytree API key');
   row('joytree logout',                      'Remove local credentials');
-  row('joytree whoami',                      'Show the active account and API key scope');
-  row('joytree status',                      'Show account status and project overview');
-  row('joytree workspace',                   'Show your workspace plan and storage usage');
+  row('joytree whoami',                      'Show active account and API key scope');
+  row('joytree status',                      'Account status and project overview');
+  row('joytree workspace',                   'Workspace plan and storage usage');
 
-  section('API Key');
-  row('joytree apikey show',                 'View your current API key and usage stats');
+  section('◈', 'API Key');
+  row('joytree apikey show',                 'View current API key and usage stats');
   row('joytree apikey rotate',               'Revoke old key and generate a new one');
 
-  section('Deploy');
-  row('joytree deploy -r <repo>',            'Deploy a GitHub repo (interactive build wizard)');
-  row('joytree deploy --static',             'Skip the wizard, deploy as static site');
+  section('◈', 'Deploy');
+  row('joytree deploy -r <repo>',            'Deploy a GitHub repo — interactive wizard');
+  row('joytree deploy --static',             'Skip wizard, force static site');
   row('joytree redeploy <project-id>',       'Trigger a fresh redeployment');
   row('joytree stop <deploy-id>',            'Cancel a currently running deployment');
   row('joytree autodeploy <id> --enable',    'Enable GitHub push auto-deploy');
   row('joytree autodeploy <id> --disable',   'Disable GitHub push auto-deploy');
   row('joytree deployments [project-id]',    'Show recent deployments');
-  row('joytree open <project-id>',           'Open the live URL in your browser');
-  row('joytree upload --dir ./myapp',        'Deploy directly from a local folder (no git)');
+  row('joytree open <project-id>',           'Open live URL in your browser');
+  row('joytree upload --dir ./myapp',        'Deploy from a local folder (no git)');
 
-  section('Projects');
+  section('◈', 'Projects');
   row('joytree projects',                    'List all your projects');
   row('joytree inspect <project-id>',        'Show full project details');
   row('joytree delete <project-id>',         'Delete a project (irreversible)');
 
-  section('Logs');
+  section('◈', 'Logs');
   row('joytree logs <project-id>',           'Fetch recent runtime logs');
-  row('joytree logs <id> --follow',          'Stream live project logs');
+  row('joytree logs <id> --follow',          'Stream live project logs in real time');
   row('joytree logs <id> --lines 100',       'Fetch logs by line count');
 
-  section('Environment Variables');
+  section('◈', 'Environment Variables');
   row('joytree env list <project-id>',       'List project env var keys');
   row('joytree env set <id> KEY=VALUE',      'Set one or more env vars');
   row('joytree env delete <id> <KEY>',       'Delete an env var');
   row('joytree env push <project-id>',       'Push a local .env file to a project');
   row('joytree env push <id> --force',       'Replace all existing env vars');
 
-  section('GitHub');
+  section('◈', 'GitHub');
   row('joytree pull repos',                  'List your linked GitHub repositories');
   row('joytree pull branches <repo-url>',    'List branches for a repository');
 
-  section('Domains');
-  row('joytree domains list',                'List your custom domains');
-  row('joytree domains attach <d> <id>',     'Attach a domain to a project');
+  section('◈', 'Domains');
+  row('joytree domains list',                'List all custom domains');
+  row('joytree domains attach <d> <id>',     'Attach a custom domain to a project');
+  row('joytree domains transfer <d> <id>',   'Transfer a domain — stream DNS progress live');
+  row('joytree domains dns <domain>',        'View all DNS records for a domain');
+  row('joytree domains dns-add <domain>',    'Add a DNS record to a domain');
   row('joytree domains verify <domain>',     'Trigger DNS verification');
+  row('joytree domains export <domain>',     'Export external URL / connection info');
   row('joytree domains remove <domain>',     'Remove a custom domain');
   row('joytree domains check <domain>',      'Check domain availability');
 
-  section('Domain Registration');
+  section('◈', 'Domain Registration');
   row('joytree domains tlds',                'List available TLDs and pricing');
   row('joytree domains register <domain>',   'Register a brand new domain');
 
-  section('Databases');
+  section('◈', 'Databases');
   row('joytree db list',                     'List all databases');
-  row('joytree db create --type <type>',     'Create a database (postgres/mysql/redis/mongo)');
+  row('joytree db create',                   'Create a database — interactive wizard');
   row('joytree db start <db-id>',            'Start a stopped database');
   row('joytree db stop <db-id>',             'Stop a running database');
   row('joytree db restart <db-id>',          'Restart a database');
   row('joytree db logs <db-id>',             'Fetch recent database logs');
   row('joytree db delete <db-id>',           'Delete a database (irreversible)');
 
-  section('AI Agent');
-  row('joytree agent providers',             'List available AI providers (Llama, GPT, Claude, Grok)');
-  row('joytree agent start --prompt "..."',  'Start an AI agent session to fix or build code');
+  section('◈', 'AI Agent');
+  row('joytree agent providers',             'List AI providers (Llama, GPT, Claude, Grok)');
+  row('joytree agent start --prompt "..."',  'Start an AI agent session');
   row('joytree agent status <session-id>',   'Check on a running agent session');
-  row('joytree agent followup <id> -m "..."','Send a follow-up message to an agent session');
+  row('joytree agent followup <id> -m "..."','Send a follow-up to an agent session');
 
-  section('Webhooks');
+  section('◈', 'Webhooks');
   row('joytree webhook secret',              'Show your global webhook secret');
   row('joytree webhook rotate',              'Regenerate your webhook secret');
 
-  section('SSH Keys');
+  section('◈', 'SSH Keys');
   row('joytree ssh list',                    'List all SSH keys');
   row('joytree ssh generate --name <n>',     'Generate a new SSH key pair');
   row('joytree ssh delete <key-id>',         'Delete an SSH key');
 
-  section('Billing & Support');
+  section('◈', 'Billing & Support');
   row('joytree billing',                     'Show billing configuration status');
   row('joytree support -m "..."',            'Send a message to Joytree support');
 
-  section('Activity');
+  section('◈', 'Activity');
   row('joytree activity',                    'Show recent platform activity feed');
   row('joytree activity --limit <n>',        'Limit number of events shown');
 
-  console.log();
+  console.log(`\n${c.gray}  Run ${c.green}joytree <command> --help${c.gray} for options on any command.${c.reset}\n`);
 }
 
 program
@@ -189,7 +197,11 @@ envGroup.command('push <project-id>').option('--file <path>', '', '.env').option
 const domainGroup = program.command('domains');
 domainGroup.command('list').action(domains.list);
 domainGroup.command('attach <domain> <project-id>').action(domains.attach);
+domainGroup.command('transfer <domain> <project-id>').action(domains.transfer);
+domainGroup.command('dns <domain>').action(domains.dnsRecords);
+domainGroup.command('dns-add <domain>').option('--type <type>').option('--host <host>').option('--value <value>').option('--ttl <ttl>').action(domains.dnsAdd);
 domainGroup.command('verify <domain>').action(domains.verify);
+domainGroup.command('export <domain>').action(domains.exportUrl);
 domainGroup.command('remove <domain>').action(domains.remove);
 domainGroup.command('check <domain>').action(domains.check);
 domainGroup.command('tlds').action(registrar.tlds);

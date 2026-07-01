@@ -148,10 +148,8 @@ async function create(opts) {
 
   // Memory
   const memChoice = await choose('Memory allocation:', [
-    { label: '128 MB  — light workloads', val: '128m' },
-    { label: '256 MB  — default',         val: '256m' },
-    { label: '512 MB  — heavier usage',   val: '512m' },
-    { label: '1 GB    — production',      val: '1g'   },
+    { label: '256 MB  — default (recommended)', val: '256m' },
+    { label: '512 MB  — heavier workloads',     val: '512m' },
   ]);
 
   console.log(`\n${ui.c.bold}Database Summary${ui.c.reset}`);
@@ -244,24 +242,66 @@ const stop    = dbId => dbAction(dbId, 'stop');
 const restart = dbId => dbAction(dbId, 'restart');
 
 async function fetchLogs(dbId) {
-  const spin = ui.spinner(`Fetching logs for ${dbId}`);
-  try {
-    const data  = await api.get(`/api/databases/${encodeURIComponent(dbId)}/logs`);
-    spin.stop();
-    const lines = Array.isArray(data) ? data : (data.logs || data.lines || []);
-    if (!lines.length) { ui.info('No log entries found.'); return; }
-    ui.header(`DB Logs — ${dbId}`);
-    ui.divider();
-    lines.forEach(l => {
-      const msg = typeof l === 'string' ? l : (l.message || l.text || l.log || JSON.stringify(l));
-      console.log(`  ${ui.c.dim}${msg}${ui.c.reset}`);
+  const apiKey  = require('../lib/config').getApiKey();
+  const baseUrl = require('../lib/config').getBaseUrl();
+  const https   = require('https');
+  const http    = require('http');
+  const { URL } = require('url');
+
+  if (!apiKey) { ui.error('Not logged in. Run: joytree login'); process.exit(1); }
+
+  ui.header(`DB Logs — ${dbId}`);
+  ui.divider();
+  ui.info(`Streaming logs (Ctrl+C to stop)`);
+
+  const url = new URL(`${baseUrl}/api/databases/${encodeURIComponent(dbId)}/logs`);
+  const mod = url.protocol === 'https:' ? https : http;
+
+  const req = mod.request({
+    hostname: url.hostname,
+    port:     url.port || (url.protocol === 'https:' ? 443 : 80),
+    path:     url.pathname,
+    method:   'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Accept':        'text/event-stream',
+      'User-Agent':    `joytree-cli/${require('../package.json').version}`,
+    },
+  }, (res) => {
+    if (res.statusCode >= 400) {
+      ui.error(`Failed (HTTP ${res.statusCode}).`);
+      process.exit(1);
+    }
+    let buf = '';
+    res.setEncoding('utf8');
+    res.on('data', chunk => {
+      buf += chunk;
+      const events = buf.split('\n\n');
+      buf = events.pop();
+      for (const block of events) {
+        let dataStr = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+        }
+        if (!dataStr || dataStr === 'ping') continue;
+        try {
+          const ev  = JSON.parse(dataStr);
+          const msg = ev.message || ev.text || ev.log || (typeof ev === 'string' ? ev : JSON.stringify(ev));
+          const lvl = String(ev.level || '').toLowerCase();
+          const colored = lvl === 'error' || lvl === 'stderr' ? `${ui.c.red}${msg}${ui.c.reset}`
+                        : lvl === 'warn'                      ? `${ui.c.yellow}${msg}${ui.c.reset}` : `${ui.c.dim}${msg}${ui.c.reset}`;
+          console.log(`  ${colored}`);
+        } catch (_) {
+          if (dataStr) console.log(`  ${ui.c.dim}${dataStr}${ui.c.reset}`);
+        }
+      }
     });
-    console.log();
-  } catch (err) {
-    spin.stop();
-    ui.error(`Failed: ${err.message}`);
-    process.exit(1);
-  }
+    res.on('end', () => { console.log(); process.exit(0); });
+  });
+
+  req.on('error', err => { ui.error(`Connection error: ${err.message}`); process.exit(1); });
+  req.end();
+  process.on('SIGINT', () => { req.destroy(); console.log(); process.exit(0); });
 }
 
 async function del(dbId, opts) {
