@@ -5,6 +5,7 @@ const path     = require('path');
 const readline = require('readline');
 const { api }  = require('../lib/api');
 const ui       = require('../lib/ui');
+const config   = require('../lib/config');
 
 // Mirrors the AI Version picker on the dashboard's Realtime API Builder page.
 // v1 is the default and free for everyone. v2 needs an active paid plan.
@@ -59,6 +60,11 @@ function readContextFile(filePath) {
   return { sourceText: '', fileBase64: buf.toString('base64'), fileMime: mime, fileName: name };
 }
 
+function fullUrl(rawEndpoint) {
+  if (!rawEndpoint) return '';
+  return /^https?:\/\//i.test(rawEndpoint) ? rawEndpoint : `${config.getBaseUrl()}${rawEndpoint}`;
+}
+
 async function providers() {
   ui.header('Joytree AI Versions');
   ui.divider();
@@ -105,14 +111,28 @@ async function create(opts) {
     ui.error(`Failed: ${err.message}`);
     process.exit(1);
   }
-  spin.stop('API deployed!');
+  spin.stop();
 
-  console.log(`\n${ui.c.green}${ui.c.bold}✓ Flow ${data.flowId}${ui.c.reset}`);
-  ui.label('Endpoint', `${ui.c.cyan}${data.endpoint || '—'}${ui.c.reset}`);
+  // The server returns a relative path (e.g. /api/live/flow_123) — same as the
+  // dashboard, which does `window.location.origin + d.endpoint`. Build the
+  // same full URL here so the CLI output is actually clickable/usable.
+  const rawEndpoint = data.endpoint || `/api/live/${data.flowId}`;
+  const fullEndpoint = fullUrl(rawEndpoint);
+
+  console.log(`\n${ui.c.green}${ui.c.bold}🎉 🎉 🎉  Congratulations! Your API is live!  🎉 🎉 🎉${ui.c.reset}\n`);
+  console.log(`  ${ui.c.dim}Well made — from prompt to a live endpoint in one shot.${ui.c.reset}\n`);
+  ui.header('Deployment Details');
+  ui.divider();
+  ui.label('Flow ID', data.flowId);
+  ui.label('Endpoint', `${ui.c.cyan}${fullEndpoint}${ui.c.reset}`);
   if (data.chunked && data.totalGenerated) ui.label('Generated', `${data.totalGenerated} items (chunked)`);
-  console.log(`\n  ${ui.c.dim}Dockerize it:   ${ui.c.cyan}joytree api dockerize ${data.flowId}${ui.c.reset}`);
+
+  ui.header('Next steps');
+  ui.divider();
+  console.log(`  ${ui.c.dim}Dockerize it:   ${ui.c.cyan}joytree api dockerize ${data.flowId}${ui.c.reset}`);
   console.log(`  ${ui.c.dim}Link a project: ${ui.c.cyan}joytree api link ${data.flowId} --project-id <id>${ui.c.reset}`);
-  console.log(`  ${ui.c.dim}Refine it:      ${ui.c.cyan}joytree api followup ${data.flowId} -m "..."${ui.c.reset}\n`);
+  console.log(`  ${ui.c.dim}Refine it:      ${ui.c.cyan}joytree api followup ${data.flowId} -m "..."${ui.c.reset}`);
+  console.log(`  ${ui.c.dim}Inspect it:     ${ui.c.cyan}joytree api inspect ${data.flowId}${ui.c.reset}\n`);
 }
 
 async function list() {
@@ -129,7 +149,7 @@ async function list() {
       const prompt = String(a.prompt || 'No prompt').slice(0, 80);
       console.log(`  ${badge}  ${ui.c.bold}${a.flowId}${ui.c.reset}`);
       console.log(`     ${ui.c.dim}${prompt}${prompt.length >= 80 ? '…' : ''}${ui.c.reset}`);
-      if (a.endpoint) console.log(`     ${ui.c.cyan}${a.endpoint}${ui.c.reset}`);
+      if (a.endpoint) console.log(`     ${ui.c.cyan}${fullUrl(a.endpoint)}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {
@@ -148,7 +168,7 @@ async function inspect(flowId) {
     ui.header(`API — ${flowId}`);
     ui.divider();
     ui.label('Prompt', a.prompt || '—');
-    ui.label('Endpoint', a.endpoint || `/api/live/${flowId}`);
+    ui.label('Endpoint', fullUrl(a.endpoint) || fullUrl(`/api/live/${flowId}`));
     ui.label('Dockerized', a.dockerized ? 'yes' : 'no');
     ui.label('Linked project', a.linkedProjectId || '—');
     ui.label('Created', a.createdAt || '—');
