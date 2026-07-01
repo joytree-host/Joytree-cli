@@ -7,7 +7,8 @@
     "joytree": "bin/joytree.js"
   },
   "scripts": {
-    "start": "node bin/joytree.js"
+    "start": "node bin/joytree.js",
+    "release": "npm version patch && npm publish --access public && git push origin main --follow-tags"
   },
   "keywords": ["joytree", "deploy", "hosting", "cli"],
   "license": "MIT",
