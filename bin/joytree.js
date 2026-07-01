@@ -17,6 +17,7 @@ const webhook    = require('../commands/webhook');
 const ssh        = require('../commands/ssh');
 const extras     = require('../commands/extras');
 const agent      = require('../commands/agent');
+const apibuilder = require('../commands/apibuilder');
 const registrar  = require('../commands/registrar');
 const misc       = require('../commands/misc');
 const ui         = require('../lib/ui');
@@ -116,6 +117,16 @@ function showHelp() {
   row('joytree agent status <session-id>',   'Check on a running agent session');
   row('joytree agent followup <id> -m "..."','Send a follow-up to an agent session');
 
+  section('◈', 'API Builder');
+  row('joytree api providers',               'List Joytree AI versions (v1–v4)');
+  row('joytree api create --prompt "..."',   'Generate a REST API from a text prompt');
+  row('joytree api list',                    'List your generated APIs');
+  row('joytree api inspect <flow-id>',       'Show details for a generated API');
+  row('joytree api followup <id> -m "..."',  'Refine a generated API with more instructions');
+  row('joytree api dockerize <flow-id>',     'Package a flow into a persistent container');
+  row('joytree api link <id> --project-id',  'Link a generated API to a project');
+  row('joytree api delete <flow-id>',        'Delete a generated API (irreversible)');
+
   section('◈', 'Webhooks');
   row('joytree webhook secret',              'Show your global webhook secret');
   row('joytree webhook rotate',              'Regenerate your webhook secret');
@@ -133,7 +144,7 @@ function showHelp() {
   row('joytree activity',                    'Show recent platform activity feed');
   row('joytree activity --limit <n>',        'Limit number of events shown');
 
-  console.log(`\n${c.gray}  Run ${c.green}joytree <command> --help${c.gray} for options on any command.${c.reset}\n`);
+  console.log(`\n${c.gray}  Run ${c.green}joytree${c.gray} with no arguments any time to see this list again.${c.reset}\n`);
 }
 
 program
@@ -237,6 +248,17 @@ agentGroup.command('providers').action(agent.providers);
 agentGroup.command('start').option('-p, --prompt <text>').option('--provider <id>').option('--project-id <id>').action(agent.start);
 agentGroup.command('status <session-id>').action(agent.status);
 agentGroup.command('followup <session-id>').option('-m, --message <text>').action(agent.followup);
+
+// ── API Builder ──────────────────────────────────────────────────────
+const apiGroup = program.command('api');
+apiGroup.command('providers').action(apibuilder.providers);
+apiGroup.command('create').option('-p, --prompt <text>').option('--file <path>').option('--ai-version <version>', '', 'v1').action(apibuilder.create);
+apiGroup.command('list').action(apibuilder.list);
+apiGroup.command('inspect <flow-id>').action(apibuilder.inspect);
+apiGroup.command('followup <flow-id>').option('-m, --message <text>').action(apibuilder.followup);
+apiGroup.command('dockerize <flow-id>').action(apibuilder.dockerize);
+apiGroup.command('link <flow-id>').option('--project-id <id>').action(apibuilder.link);
+apiGroup.command('delete <flow-id>').option('-y, --yes').action(apibuilder.del);
 
 // ── Webhook ───────────────────────────────────────────────────────────
 const webhookGroup = program.command('webhook');
