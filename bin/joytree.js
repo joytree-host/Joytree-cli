@@ -81,13 +81,21 @@ function showHelp() {
   section('◈', 'Domains');
   row('joytree domains list',                'List all custom domains');
   row('joytree domains attach <d> <id>',     'Attach a custom domain to a project');
-  row('joytree domains transfer <d> <id>',   'Transfer a domain — stream DNS progress live');
-  row('joytree domains dns <domain>',        'View all DNS records for a domain');
-  row('joytree domains dns-add <domain>',    'Add a DNS record to a domain');
+  row('joytree domains transfer <d> <id>',   'Transfer domain — stream DNS progress live');
   row('joytree domains verify <domain>',     'Trigger DNS verification');
-  row('joytree domains export <domain>',     'Export external URL / connection info');
   row('joytree domains remove <domain>',     'Remove a custom domain');
   row('joytree domains check <domain>',      'Check domain availability');
+
+  section('◈', 'DNS Management');
+  row('joytree domains dns <domain>',        'View all DNS records for a domain');
+  row('joytree domains dns-add <domain>',    'Add a DNS record (A/CNAME/MX/TXT)');
+  row('joytree domains dns-delete <domain>', 'Delete a DNS record');
+  row('joytree domains nameservers <domain>','Update nameservers for a domain');
+
+  section('◈', 'External URL Proxy');
+  row('joytree domains proxy-list',          'List all external URL proxies');
+  row('joytree domains proxy-set <sub>',     'Point a subdomain to an external URL');
+  row('joytree domains proxy-remove <sub>',  'Remove an external URL proxy');
 
   section('◈', 'Domain Registration');
   row('joytree domains tlds',                'List available TLDs and pricing');
@@ -198,14 +206,20 @@ const domainGroup = program.command('domains');
 domainGroup.command('list').action(domains.list);
 domainGroup.command('attach <domain> <project-id>').action(domains.attach);
 domainGroup.command('transfer <domain> <project-id>').action(domains.transfer);
-domainGroup.command('dns <domain>').action(domains.dnsRecords);
-domainGroup.command('dns-add <domain>').option('--type <type>').option('--host <host>').option('--value <value>').option('--ttl <ttl>').action(domains.dnsAdd);
 domainGroup.command('verify <domain>').action(domains.verify);
-domainGroup.command('export <domain>').action(domains.exportUrl);
 domainGroup.command('remove <domain>').action(domains.remove);
 domainGroup.command('check <domain>').action(domains.check);
 domainGroup.command('tlds').action(registrar.tlds);
 domainGroup.command('register <domain>').option('--project-id <id>').option('--years <n>').action((domain, opts) => registrar.register({ domain, ...opts }));
+// DNS management
+domainGroup.command('dns <domain>').action(domains.dnsRecords);
+domainGroup.command('dns-add <domain>').option('--type <type>').option('--host <host>').option('--value <value>').option('--ttl <ttl>').action(domains.dnsAdd);
+domainGroup.command('dns-delete <domain>').option('--record-id <id>').action(domains.dnsDelete);
+domainGroup.command('nameservers <domain>').option('--ns <list>', 'Comma-separated nameservers').action(domains.nameservers);
+// External URL proxy
+domainGroup.command('proxy-list').action(domains.proxyList);
+domainGroup.command('proxy-set <subdomain>').option('--url <url>').action(domains.proxySet);
+domainGroup.command('proxy-remove <subdomain>').action(domains.proxyRemove);
 
 // ── Databases ─────────────────────────────────────────────────────────
 const dbGroup = program.command('db');

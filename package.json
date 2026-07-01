@@ -1,6 +1,6 @@
 {
   "name": "@joytreesite/joytree",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Joytree CLI — deploy and manage your sites from the terminal",
   "main": "bin/joytree.js",
   "bin": {
