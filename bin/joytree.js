@@ -11,6 +11,7 @@ const envCmd     = require('../commands/env');
 const logs       = require('../commands/logs');
 const domains    = require('../commands/domains');
 const db         = require('../commands/db');
+const migrate    = require('../commands/migrate');
 const account    = require('../commands/account');
 const github     = require('../commands/github');
 const webhook    = require('../commands/webhook');
@@ -110,6 +111,13 @@ function showHelp() {
   row('joytree db restart <db-id>',          'Restart a database');
   row('joytree db logs <db-id>',             'Fetch recent database logs');
   row('joytree db delete <db-id>',           'Delete a database (irreversible)');
+
+  section('◈', 'Data Migration');
+  row('joytree migrate start',               'Migrate data into a JoyTree database — interactive wizard');
+  row('joytree migrate list',                'List all migrations, most recent first');
+  row('joytree migrate status <job-id>',     'Check a migration\'s progress, result, and logs');
+  row('joytree migrate delete <job-id>',     'Delete one migration from history');
+  row('joytree migrate clear',               'Delete ALL migration history (irreversible)');
 
   section('◈', 'AI Agent');
   row('joytree agent providers',             'List AI providers (Llama, GPT, Claude, Grok)');
@@ -241,6 +249,28 @@ dbGroup.command('stop <db-id>').action(db.stop);
 dbGroup.command('restart <db-id>').action(db.restart);
 dbGroup.command('logs <db-id>').action(db.fetchLogs);
 dbGroup.command('delete <db-id>').option('-y, --yes').action(db.del);
+
+// ── Data Migration ────────────────────────────────────────────────────
+// Moves data between databases regardless of engine, including from
+// external sources not hosted on JoyTree (Mongo Atlas, Firebase RTDB, or
+// an external MySQL/PostgreSQL/MariaDB/Redis instance). Every option below
+// is optional -- omit them all for a fully interactive, prompted flow, or
+// pass them for a non-interactive/scriptable one.
+const migrateGroup = program.command('migrate');
+migrateGroup.command('start')
+  .option('--source-kind <kind>', 'joytree | mongo | firebase | sql | redis')
+  .option('--source-database-id <id>', 'Source JoyTree database id (when --source-kind joytree)')
+  .option('--connection-string <str>', 'External connection string (when --source-kind mongo|sql|redis)')
+  .option('--sql-engine <engine>', 'mysql | postgres | mariadb (when --source-kind sql)')
+  .option('--firebase-url <url>', 'Firebase Realtime Database URL (when --source-kind firebase)')
+  .option('--firebase-secret <secret>', 'Optional Firebase legacy database secret')
+  .option('--destination-id <id>', 'Destination JoyTree database id (always one of your own)')
+  .option('--wait', 'Block and poll until the migration finishes instead of returning immediately')
+  .action(migrate.start);
+migrateGroup.command('list').action(migrate.list);
+migrateGroup.command('status <job-id>').action(migrate.status);
+migrateGroup.command('delete <job-id>').option('-y, --yes').action(migrate.del);
+migrateGroup.command('clear').option('-y, --yes').action(migrate.clear);
 
 // ── AI Agent ──────────────────────────────────────────────────────────
 const agentGroup = program.command('agent');

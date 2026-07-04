@@ -139,6 +139,38 @@ joytree env push my-site
 
 ---
 
+### Data Migration
+
+Moves data between databases regardless of engine (Mongo to MySQL, Firebase
+to Postgres, Redis to MariaDB, etc — translation between data models is
+handled automatically). The destination is always one of your own JoyTree
+databases; the source can be another JoyTree database, or an external
+MongoDB/Atlas cluster, Firebase Realtime Database, MySQL/PostgreSQL/MariaDB
+server, or Redis instance reached by connection string.
+
+| Command | Description |
+|---|---|
+| `joytree migrate start` | Start a migration — interactive wizard if no flags given |
+| `joytree migrate start --source-kind joytree --source-database-id <id> --destination-id <id>` | Migrate from another JoyTree database |
+| `joytree migrate start --source-kind mongo --connection-string <uri> --destination-id <id>` | Migrate from an external MongoDB/Atlas cluster |
+| `joytree migrate start --source-kind firebase --firebase-url <url> --destination-id <id>` | Migrate from a Firebase Realtime Database |
+| `joytree migrate start --source-kind sql --sql-engine mysql --connection-string <uri> --destination-id <id>` | Migrate from an external MySQL/PostgreSQL/MariaDB server |
+| `joytree migrate start --source-kind redis --connection-string <uri> --destination-id <id>` | Migrate from an external Redis instance |
+| `joytree migrate start ... --wait` | Block and poll until the migration finishes instead of returning immediately |
+| `joytree migrate list` | List all migrations, most recent first |
+| `joytree migrate status <job-id>` | Check a migration's progress, result, and logs |
+| `joytree migrate delete <job-id>` | Delete one migration from history |
+| `joytree migrate clear` | Delete ALL migration history (irreversible) |
+
+A MongoDB connection string **must include a database name** (the part
+after the last `/` before any `?`) — Atlas's default "Copy connection
+string" button omits it, which would otherwise silently migrate from
+MongoDB's own default `test` database instead of the one you meant. Both
+the interactive wizard and `--source-kind mongo` catch this and ask again
+rather than running the migration against the wrong data.
+
+---
+
 ## Configuration
 
 Credentials are stored at `~/.joytree/credentials.json` (mode 600).
