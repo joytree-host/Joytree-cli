@@ -30,7 +30,9 @@ async function activity(opts) {
 async function stopDeploy(projectId) {
   const spin = ui.spinner(`Stopping ${projectId}`);
   try {
-    await api.post(`/api/projects/${encodeURIComponent(projectId)}/stop`, {});
+    // [FIX] Was posting to /api/projects/:id/stop, which doesn't exist as a
+    // route on the server — the actual endpoint lives under /api/v1.
+    await api.post(`/api/v1/projects/${encodeURIComponent(projectId)}/stop`, {});
     spin.stop(`Stopped ${ui.c.bold}${projectId}${ui.c.reset}.`);
   } catch (err) {
     spin.stop();
