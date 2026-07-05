@@ -7,7 +7,7 @@ const ui       = require('../lib/ui');
 
 // ── Framework presets (mirrors the dashboard exactly) ─────────────────────────
 const FRAMEWORKS = [
-  { key: 'auto',       label: 'Auto-detect',  install: '',                                        build: '',                    start: '',                                  output: '',      siteType: 'static'  },
+  { key: 'auto',       label: 'Auto-detect',  install: '',                                        build: '',                    start: '',                                  output: '',      siteType: ''  }, // siteType intentionally blank — buildSettingsWizard() returns early for 'auto' before this is ever read; left blank (not 'static') so this entry can't be mistaken for a real default if that early-return logic ever changes.
   { key: 'static',     label: 'Static HTML',  install: '',                                        build: 'echo skip',           start: '',                                  output: '.',     siteType: 'static'  },
   { key: 'vite',       label: 'Vite',         install: 'npm install',                             build: 'npm run build',       start: '',                                  output: 'dist',  siteType: 'static'  },
   { key: 'react-cra',  label: 'React (CRA)',  install: 'npm install',                             build: 'npm run build',       start: '',                                  output: 'build', siteType: 'static'  },
@@ -232,7 +232,15 @@ async function deployGit(opts) {
       build:    build  || '',
       start:    start  || '',
       output:   'dist',
-      siteType: isStatic ? 'static' : (start ? 'server' : 'static'),
+      // [FIX] Was `isStatic ? 'static' : (start ? 'server' : 'static')` --
+      // forced 'static' any time neither --static nor --start was passed,
+      // even if the person only meant to override --build and wanted the
+      // runtime itself auto-detected (same bug class as buildSettingsWizard's
+      // "auto" option, fixed earlier). Now: explicit --static wins, an
+      // explicit --start implies server, and otherwise siteType is left
+      // blank so the server's real post-clone detection gets to run instead
+      // of being pre-empted here.
+      siteType: isStatic ? 'static' : (start ? 'server' : ''),
       nodeVer:  '20',
       framework:'auto',
     };
