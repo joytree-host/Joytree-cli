@@ -76,6 +76,27 @@ async function buildSettingsWizard(defaults = {}) {
   // Step 1: Framework
   const fw = await choose('Select your framework (or Auto-detect):', FRAMEWORKS);
 
+  // [FIX] Auto-detect used to fall straight into the manual prompt flow below
+  // (same branch as "don't use defaults"), pre-filled with generic
+  // npm-flavored guesses ('npm install', 'npm run build', 'dist' output,
+  // Node 20) regardless of what the repo actually is — so picking
+  // "Auto-detect" never actually detected anything, it just asked the user
+  // to type in the same settings a Node/React project would need, even for
+  // a Python or Go repo.
+  //
+  // The server (buildRunner.js) already does real detection after cloning
+  // the repo: engines field for Node version, marker files (composer.json,
+  // requirements.txt, go.mod, Gemfile, Cargo.toml, pom.xml, mix.exs, etc.)
+  // for non-Node runtimes, and framework-aware install/build command
+  // defaults for Node projects. All of that only runs when these fields
+  // are left blank — so for real auto-detect, we now just send blank
+  // fields and let the server do the actual work, instead of asking
+  // anything at all.
+  if (fw.key === 'auto') {
+    console.log(`\n${c.dim}Auto-detect selected — JoyTree will inspect your repo after cloning it and pick the runtime, install/build/start commands, and Node version automatically.${c.reset}`);
+    return { install: '', build: '', start: '', output: '', siteType: '', nodeVer: '', framework: 'auto' };
+  }
+
   let install = fw.install;
   let build   = fw.build;
   let start   = fw.start;
@@ -84,11 +105,9 @@ async function buildSettingsWizard(defaults = {}) {
   let nodeVer = '20';
 
   // Step 2: Customise or accept defaults
-  const customise = fw.key !== 'auto'
-    ? await confirm(`\nUse default settings for ${c.bold}${fw.label}${c.reset}?`, true)
-    : false;
+  const customise = await confirm(`\nUse default settings for ${c.bold}${fw.label}${c.reset}?`, true);
 
-  if (!customise || fw.key === 'auto') {
+  if (!customise) {
     console.log(`\n${c.bold}Build Settings${c.reset} ${c.dim}(press Enter to keep default)${c.reset}`);
 
     install  = await ask(`  Install command `, install  || 'npm install');
@@ -104,7 +123,7 @@ async function buildSettingsWizard(defaults = {}) {
     siteType = typeChoice.val || siteType;
 
     // Node version (only relevant for Node/static)
-    if (fw.key === 'auto' || fw.key.startsWith('node') || fw.key === 'nextjs' || fw.key === 'nuxt' || fw.key === 'vite' || fw.key === 'react-cra' || fw.key === 'bun') {
+    if (fw.key.startsWith('node') || fw.key === 'nextjs' || fw.key === 'nuxt' || fw.key === 'vite' || fw.key === 'react-cra' || fw.key === 'bun') {
       const nvChoice = await choose('Node.js version:', NODE_VERSIONS.map(v => ({ label: `Node ${v}`, val: v })));
       nodeVer = nvChoice.val || '20';
     }
