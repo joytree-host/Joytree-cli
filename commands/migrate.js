@@ -262,4 +262,4 @@ async function clear(opts) {
   }
 }
 
-module.exports = { start, list, status, del, clear };
+module.exports = { start, list, status, del, clear, buildSourceInteractive, buildSourceFromFlags, SOURCE_KINDS };

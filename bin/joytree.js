@@ -118,6 +118,7 @@ function showHelp() {
   row('joytree migrate status <job-id>',     'Check a migration\'s progress, result, and logs');
   row('joytree migrate delete <job-id>',     'Delete one migration from history');
   row('joytree migrate clear',               'Delete ALL migration history (irreversible)');
+  row('joytree diff',                         'Compare two databases (any engines) — interactive wizard');
 
   section('◈', 'AI Agent');
   row('joytree agent providers',             'List AI providers (Llama, GPT, Claude, Grok)');
@@ -271,6 +272,28 @@ migrateGroup.command('list').action(migrate.list);
 migrateGroup.command('status <job-id>').action(migrate.status);
 migrateGroup.command('delete <job-id>').option('-y, --yes').action(migrate.del);
 migrateGroup.command('clear').option('-y, --yes').action(migrate.clear);
+
+// ── Compare Databases ────────────────────────────────────────────────────
+// Same five source kinds as `migrate`, described identically -- just two
+// of them (A and B) instead of one source + one JoyTree destination.
+// Omit every flag for a fully interactive, prompted flow.
+const diff = require('../commands/diff');
+program.command('diff')
+  .description('Compare two databases (any engines) and see exactly what differs')
+  .option('--a-source-kind <kind>', 'joytree | mongo | firebase | sql | redis (Database A)')
+  .option('--a-database-id <id>', 'Database A JoyTree database id (when --a-source-kind joytree)')
+  .option('--a-connection-string <str>', 'Database A external connection string')
+  .option('--a-sql-engine <engine>', 'mysql | postgres | mariadb (when --a-source-kind sql)')
+  .option('--a-firebase-url <url>', 'Database A Firebase Realtime Database URL')
+  .option('--a-firebase-secret <secret>', 'Database A optional Firebase legacy database secret')
+  .option('--b-source-kind <kind>', 'joytree | mongo | firebase | sql | redis (Database B)')
+  .option('--b-database-id <id>', 'Database B JoyTree database id (when --b-source-kind joytree)')
+  .option('--b-connection-string <str>', 'Database B external connection string')
+  .option('--b-sql-engine <engine>', 'mysql | postgres | mariadb (when --b-source-kind sql)')
+  .option('--b-firebase-url <url>', 'Database B Firebase Realtime Database URL')
+  .option('--b-firebase-secret <secret>', 'Database B optional Firebase legacy database secret')
+  .option('--json', 'Print the raw JSON report instead of a formatted summary')
+  .action(diff.run);
 
 // ── AI Agent ──────────────────────────────────────────────────────────
 const agentGroup = program.command('agent');
