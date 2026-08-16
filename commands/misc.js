@@ -88,15 +88,31 @@ async function uploadDeploy(opts) {
 
     spin.stop();
     const spin2 = ui.spinner(`Uploading ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-    const data  = await api.post('/api/upload-project', {
-      name,
-      subdomain: name,
-      fileBase64: fileBuffer.toString('base64'),
-    });
+    // [FIX] Two bugs here: (1) this was api.post() with a JSON body and a
+    // fileBase64 field -- /api/upload-project requires actual
+    // multipart/form-data and rejects anything else on its very first
+    // line, so this call always failed with "multipart/form-data
+    // required" regardless of the archive. Now uses the real multipart
+    // helper. (2) the field the server reads is "projectName", not "name"
+    // -- was being silently ignored, leaving every uploaded project
+    // named the generic default.
+    const data = await api.postMultipart('/api/upload-project',
+      { projectName: name },
+      fileBuffer,
+      path.basename(tmpFile)
+    );
     spin2.stop(`Uploaded! Deploying now...`);
 
     const deploySpin = ui.spinner('Triggering deploy');
-    await api.post('/api/upload-deploy', { projectId: data.projectId || name });
+    // [FIX] /api/upload-deploy requires projectId, name, AND subdomain --
+    // this call only ever sent projectId, so it always failed with
+    // "projectId, name, and subdomain are required" even after a
+    // successful upload.
+    await api.post('/api/upload-deploy', {
+      projectId: data.projectId || name,
+      name,
+      subdomain: name,
+    });
     deploySpin.stop(`Deploy started for ${ui.c.bold}${name}${ui.c.reset}`);
     ui.label('URL', `https://${name}.joytree.site`);
     console.log();
