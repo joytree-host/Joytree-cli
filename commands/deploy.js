@@ -132,10 +132,13 @@ async function buildSettingsWizard(defaults = {}) {
   return { install, build, start, output, siteType, nodeVer, framework: fw.key };
 }
 
-// Resolve a project's real internal ID from its subdomain/name via /api/v1/transfer
+// Resolve a project's real internal ID from its subdomain/name via /api/v1/projects
+// [FIX] Was /api/v1/transfer -- doesn't exist, always 404'd, meaning this
+// function silently fell through to its catch block and just returned the
+// raw projectId unresolved every single time.
 async function resolveProjectId(projectId) {
   try {
-    const ws = await api.get('/api/v1/transfer');
+    const ws = await api.get('/api/v1/projects');
     const proj = (ws.projects || []).find(p =>
       p.subdomain === projectId || p.id === projectId || p._id === projectId || p.name === projectId
     );
@@ -303,7 +306,10 @@ async function deployGit(opts) {
 async function redeploy(projectId) {
   const spin = ui.spinner(`Fetching project details`);
   try {
-    const ws   = await api.get('/api/v1/transfer');
+    // [FIX] Was /api/v1/transfer -- doesn't exist, so `joytree redeploy`
+    // always failed with "Project not found" regardless of a valid
+    // subdomain/name, since ws.projects was always undefined from the 404.
+    const ws   = await api.get('/api/v1/projects');
     const proj = (ws.projects || []).find(p =>
       p.subdomain === projectId || p.id === projectId || p.name === projectId
     );
