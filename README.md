@@ -61,14 +61,141 @@ joytree logs my-site --follow
 
 **Deploy flags:**
 ```
--r, --repo <url>       GitHub repository URL
--b, --branch <branch>  Branch to deploy (default: main)
--n, --name <name>      Project name / subdomain
---build <cmd>          Build command, e.g. "npm run build"
---start <cmd>          Start command, e.g. "node server.js"
---static               Mark as a static site
--m, --message <msg>    Deployment message
+-r, --repo <url>        GitHub repository URL
+-b, --branch <branch>   Branch to deploy (default: main)
+-n, --name <name>       Project name / subdomain
+--build <cmd>           Build command, e.g. "npm run build"
+--start <cmd>           Start command, e.g. "node server.js"
+--install <cmd>         Install command
+--output <dir>          Output directory (static sites)
+--node <version>        Node.js version, e.g. 20
+--runtime <name>        Force a runtime: node, python, go, php, ruby, java, dotnet, rust, bun, deno ...
+--workdir <dir>         Build and run from a sub-directory (monorepos)
+--static                Deploy as a static site
+--worker                Deploy as a Background Worker: long-running process, no public URL (needs --start)
+--dockerfile [path]     Build from a Dockerfile (default path: Dockerfile)
+--docker-cmd <cmd>      Override the Dockerfile CMD
+--port <n>              Port the app listens on inside the container (default 3000)
+--pre-deploy <cmd>      Run after the build and before going live, e.g. a migration
+-e, --env KEY=VALUE     Environment variable (repeatable)
+-y, --yes               Skip every prompt (CI-friendly; needs --repo)
+-m, --message <msg>     Deployment message
 ```
+
+Any flag that describes the build skips the interactive wizard. Anything you leave out is auto-detected from the repo.
+
+```bash
+# A queue consumer with no public URL
+joytree deploy -r https://github.com/me/jobs -n jobs --worker --start "node worker.js" -e QUEUE=emails -y
+
+# A Dockerfile build listening on 8080, running a migration before going live
+joytree deploy -r https://github.com/me/api -n api --dockerfile docker/Dockerfile --port 8080 --pre-deploy "npm run migrate" -y
+```
+
+`--worker` and `--dockerfile` cannot be combined in one deploy. `joytree redeploy` keeps a project's worker, Dockerfile and runtime settings.
+
+`joytree deployments` prints each deployment's id and commit. Use the id with `joytree rollback`.
+
+---
+
+### Blueprints
+
+A Blueprint is a `joytree.joy` file that describes a whole stack (web, worker, static and Dockerfile services plus databases) so it deploys in one go. Run these inside a git clone, or pass `--repo`.
+
+| Command | Description |
+|---|---|
+| `joytree blueprint plan` | Read and validate the Blueprint and show what it would create. Nothing is created. |
+| `joytree blueprint deploy` | Show the plan, ask for any missing values, confirm, then deploy everything |
+| `joytree blueprint browse [dir]` | List repo files to find a Blueprint that is not at the root |
+
+```
+-r, --repo <url>                     GitHub repo (default: this folder's git remote)
+-b, --branch <branch>                Branch (default: current branch)
+-f, --file <path>                    Blueprint path if it is not joytree.joy at the repo root
+-e, --env SERVICE.KEY=VALUE          Value for a required env var (repeatable)
+    --rename-service old=new         Deploy a service under a different name (repeatable)
+    --rename-db old=new              Create a database under a different name (repeatable)
+-y, --yes                            No prompts; fails if required values are missing
+    --json                           Print the raw JSON response
+```
+
+---
+
+### Firewall
+
+Per-project firewall (Pro plan and above). `joytree fw` is a shorthand for `joytree firewall`. `<project>` is an id, subdomain or name; `<rule>` is a rule id or its exact name.
+
+| Command | Description |
+|---|---|
+| `joytree firewall show <project>` | Rules with hit counts, blocked and bypass IPs, protections, Attack Mode |
+| `joytree firewall rule add <project> ...` | Add a rule (see below) |
+| `joytree firewall rule enable\|disable\|delete <project> <rule>` | Manage a rule |
+| `joytree firewall rule move <project> <rule> --to <n>\|--top\|--bottom` | Change evaluation order |
+| `joytree firewall block <project> <ips...>` | Block IPs or CIDRs (`--expires 1h\|24h\|7d\|30d`, `--note`, `--host`) |
+| `joytree firewall unblock <project> <ips...>` | Remove addresses from the block list |
+| `joytree firewall bypass add\|remove <project> <ips...>` | Manage the bypass (allow-through) list |
+| `joytree firewall set <project> <section> key=value ...` | Update `bots`, `ddos`, `owasp`, `headers` or `responses` |
+| `joytree firewall attack <project> on\|off [--minutes 15\|60\|360\|1440]` | Toggle Attack Mode |
+| `joytree firewall test <project> --path /admin --ip 1.2.3.4` | Dry-run a request against the live rules, or an unsaved one with `--rule-json` |
+| `joytree firewall events <project>` | Recent firewall events (`--action`, `--source`, `--q`, `--limit`) |
+| `joytree firewall analytics <project> [--range 7d]` | Allowed / blocked counts and top offenders |
+| `joytree firewall insights <project>` | Automatic hardening recommendations |
+
+```bash
+# Deny /admin for everyone outside the US and GB. All --if conditions must match.
+joytree fw rule add my-app --name "Lock admin" --action deny --status 403 \
+  --if "path starts_with /admin" --if "country not_in US,GB"
+
+# Rate limit logins: 10 requests per 60 seconds per IP, then challenge
+joytree fw rule add my-app --name "Login limit" --action rate_limit --requests 10 --window 60 \
+  --by ip --on-exceed challenge --if "path eq /login"
+
+# Tune DDoS protection (dotted keys set nested values; values are parsed as JSON when possible)
+joytree fw set my-app ddos sensitivity=high autoAttack.enabled=true autoAttack.rps=250
+```
+
+Conditions are written `<field> <op> <value>`. Fields: `path`, `query`, `query_param:<name>`, `method`, `host`, `ip`, `country`, `user_agent`, `referer`, `header:<name>`, `cookie:<name>`, `scheme`, `client`. Operators: `eq`, `neq`, `contains`, `not_contains`, `starts_with`, `ends_with`, `matches`, `in`, `not_in`, `exists`, `not_exists` (`in` / `not_in` take a comma-separated list). For OR-groups pass the whole rule with `--rule '<json>'` or `--rule @rule.json`.
+
+A deny or challenge rule can lock real visitors out. Try it with `joytree firewall test`, or start with `--action log`.
+
+---
+
+### Observability
+
+| Command | Description |
+|---|---|
+| `joytree observe summary` | Traffic, errors and latency, with a per-project table |
+| `joytree observe resources` | Live CPU, memory and uptime for every project and database |
+| `joytree observe series <metric>` | One metric over time with a chart and min / avg / max / last |
+| `joytree observe requests` | Search recent requests; `--group-by path --metric errors` ranks endpoints |
+| `joytree observe cache` | CDN cache hit rate and the assets that miss most |
+| `joytree observe alerts` | Alert rules, current state and history |
+| `joytree observe alert add\|update\|delete` | Manage alert rules |
+| `joytree metrics <project>` | Live container metrics for one project |
+
+Common options: `--range 15m\|1h\|6h\|24h\|7d\|30d`, `--project <id-or-subdomain>`, `--json`.
+
+Request metrics: `requests`, `errors`, `client_errors`, `error_rate`, `latency_avg`, `latency_p50`, `latency_p95`, `latency_p99`, `bytes_out`, `cache_hit_rate`. Resource metrics (need `--resource <key>` from `observe resources`): `cpu`, `mem_pct`, `mem_bytes`, `net_rx`, `net_tx`.
+
+```bash
+joytree observe requests --status 5xx --min-ms 500        # slow failures
+joytree observe series latency_p95 --range 6h
+joytree observe series cpu --resource project:abc123
+joytree observe alert add --name "High errors" --metric error_rate --threshold 5 --severity critical --webhook https://hooks.example.com/x
+joytree observe alert update "High errors" --threshold 10   # other fields, including the webhook, are kept
+```
+
+---
+
+### Rollback & CDN
+
+| Command | Description |
+|---|---|
+| `joytree rollback <deployment-id>` | Redeploy the exact commit of an earlier successful build (GitHub-connected projects only). Asks first; `-y` skips. |
+| `joytree cdn <project> status\|on\|off` | Check or toggle the CDN |
+| `joytree cdn <project> purge` | Clear cached copies so visitors get fresh content |
+
+Find deployment ids with `joytree deployments <project>`.
 
 ---
 
