@@ -4,6 +4,7 @@ const readline = require('readline');
 const { api }  = require('../lib/api');
 const config   = require('../lib/config');
 const ui       = require('../lib/ui');
+const { VARIANTS, PRESET_RUNTIME, normalizeRuntime, versionField } = require('../lib/runtimes');
 
 // ── Framework presets (mirrors the dashboard exactly) ─────────────────────────
 const FRAMEWORKS = [
@@ -23,7 +24,14 @@ const FRAMEWORKS = [
   { key: 'java',       label: 'Java',         install: './mvnw -q -DskipTests dependency:resolve',build: './mvnw -q -DskipTests package', start: 'java -jar target/*.jar',   output: '.',     siteType: 'server'  },
   { key: 'dotnet',     label: '.NET',         install: 'dotnet restore',                          build: 'dotnet publish -c Release', start: 'dotnet run --no-build',        output: '.',     siteType: 'server'  },
   { key: 'php',        label: 'PHP',          install: 'composer install --no-dev',               build: 'echo skip',           start: 'php -S 0.0.0.0:${PORT:-3000} -t public', output: 'public', siteType: 'server' },
+  // Ruby and Elixir leave the commands blank on purpose: the server's own
+  // pipelines pick the right install/build/start for the framework you choose.
+  { key: 'ruby',       label: 'Ruby',         install: '',                                        build: '',                    start: '',                                  output: '.',     siteType: 'server'  },
+  { key: 'elixir',     label: 'Elixir',       install: '',                                        build: '',                    start: '',                                  output: '.',     siteType: 'server'  },
 ];
+// Record the runtime for presets that have a fixed one (the dashboard does the
+// same). Bun, Deno and .NET are not auto-detected server-side.
+for (const f of FRAMEWORKS) f.runtime = PRESET_RUNTIME[f.key] || '';
 
 const NODE_VERSIONS = ['18', '20', '22'];
 
@@ -76,6 +84,14 @@ async function buildSettingsWizard(defaults = {}) {
   // Step 1: Framework
   const fw = await choose('Select your framework (or Auto-detect):', FRAMEWORKS);
 
+  // Languages with several frameworks: pick one so the server uses the right
+  // runtime profile (Django vs Flask, Laravel vs Symfony, Gin, Rails, ...).
+  let runtime = fw.runtime || '';
+  if (VARIANTS[fw.key]) {
+    const v = await choose(`Which ${fw.label} framework?`, VARIANTS[fw.key]);
+    runtime = v.val || VARIANTS[fw.key][0].val;
+  }
+
   // [FIX] Auto-detect used to fall straight into the manual prompt flow below
   // (same branch as "don't use defaults"), pre-filled with generic
   // npm-flavored guesses ('npm install', 'npm run build', 'dist' output,
@@ -94,7 +110,7 @@ async function buildSettingsWizard(defaults = {}) {
   // anything at all.
   if (fw.key === 'auto') {
     console.log(`\n${c.dim}Auto-detect selected — JoyTree will inspect your repo after cloning it and pick the runtime, install/build/start commands, and Node version automatically.${c.reset}`);
-    return { install: '', build: '', start: '', output: '', siteType: '', nodeVer: '', framework: 'auto' };
+    return { install: '', build: '', start: '', output: '', siteType: '', nodeVer: '', framework: 'auto', runtime: '' };
   }
 
   let install = fw.install;
@@ -129,7 +145,7 @@ async function buildSettingsWizard(defaults = {}) {
     }
   }
 
-  return { install, build, start, output, siteType, nodeVer, framework: fw.key };
+  return { install, build, start, output, siteType, nodeVer, framework: fw.key, runtime };
 }
 
 // Resolve a project's real internal ID from its subdomain/name via /api/v1/projects
@@ -222,12 +238,19 @@ function parseDeployFlags(opts = {}) {
   }
   if (opts.dockerCmd)  extras.dockerCommand    = String(opts.dockerCmd).trim();
   if (opts.preDeploy)  extras.preDeployCommand = String(opts.preDeploy).trim();
-  if (opts.runtime)    extras.runtime          = String(opts.runtime).trim();
+  if (opts.runtime)    extras.runtime          = normalizeRuntime(opts.runtime);
   if (opts.workdir)    extras.workingDir       = String(opts.workdir).trim();
   if (opts.port !== undefined) {
     const n = Number(opts.port);
     if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error('--port must be a whole number between 1 and 65535.');
     extras.exposedPort = n;
+  }
+
+  if (opts.runtimeVersion) {
+    if (!extras.runtime) throw new Error('--runtime-version needs --runtime (for Node.js use --node).');
+    const field = versionField(extras.runtime);
+    if (!field) throw new Error(`--runtime-version does not apply to "${extras.runtime}" (use --node for Node.js; Bun and Deno have no version pin).`);
+    extras[field] = String(opts.runtimeVersion).trim();
   }
 
   if (opts.worker && opts.static) throw new Error('--worker and --static cannot be combined: a Background Worker is a running process, not a static site.');
@@ -315,7 +338,9 @@ async function deployGit(opts) {
       // explicit --start implies server, and otherwise siteType is left
       // blank so the server's real post-clone detection gets to run instead
       // of being pre-empted here.
-      siteType: isStatic ? 'static' : ((start || isWorker || isDocker) ? 'server' : ''),
+      // A language runtime (python-*, go-*, php-*, bun, dotnet ...) is never a static
+      // site; the dashboard sends 'server' for those, so do the same here.
+      siteType: isStatic ? 'static' : ((start || isWorker || isDocker || (flags.extras.runtime && !flags.extras.runtime.startsWith('node'))) ? 'server' : ''),
       nodeVer:  opts.node || '20',
       framework:'auto',
     };
@@ -342,7 +367,7 @@ async function deployGit(opts) {
   if (settings.output)  ui.label('Output dir',settings.output);
   if (settings.nodeVer) ui.label('Node ver',  settings.nodeVer);
   const x = flags.extras;
-  if (x.runtime)            ui.label('Runtime',    x.runtime);
+  if (x.runtime || settings.runtime) ui.label('Runtime', x.runtime || settings.runtime);
   if (x.workingDir)         ui.label('Work dir',   x.workingDir);
   if (isWorker)             ui.label('Mode',       'Background Worker (no public URL)');
   if (isDocker)             ui.label('Dockerfile', x.dockerfilePath);
@@ -370,6 +395,7 @@ async function deployGit(opts) {
       siteType:   settings.siteType,
       nodeVer:    settings.nodeVer,
       workingDir: '',
+      ...(settings.runtime ? { runtime: settings.runtime } : {}),
       source:     'cli',
       ...flags.extras,
     });

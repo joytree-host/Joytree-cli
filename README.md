@@ -69,7 +69,8 @@ joytree logs my-site --follow
 --install <cmd>         Install command
 --output <dir>          Output directory (static sites)
 --node <version>        Node.js version, e.g. 20
---runtime <name>        Force a runtime: node, python, go, php, ruby, java, dotnet, rust, bun, deno ...
+--runtime <name>        Runtime / framework (see the table below)
+--runtime-version <v>   Language version for --runtime, e.g. 3.12 (Python), 8.3 (PHP); for Node.js use --node
 --workdir <dir>         Build and run from a sub-directory (monorepos)
 --static                Deploy as a static site
 --worker                Deploy as a Background Worker: long-running process, no public URL (needs --start)
@@ -81,6 +82,25 @@ joytree logs my-site --follow
 -y, --yes               Skip every prompt (CI-friendly; needs --repo)
 -m, --message <msg>     Deployment message
 ```
+
+**Runtimes and frameworks**
+
+Leave `--runtime` out to auto-detect: PHP, Python, Go, Ruby, Rust, Java/Kotlin and Elixir repos are recognised from their files, and Node.js is the default. **.NET, Bun and Deno are not auto-detected, so set `--runtime` for them.** The interactive wizard asks for the framework within a language and sets the runtime for you.
+
+| Language | `--runtime` values |
+|---|---|
+| Node.js | `node`, `node-nextjs`, `node-nestjs` (Vite, CRA, Nuxt, Astro and other front ends use `node` with their build command) |
+| Bun / Deno | `bun`, `deno` |
+| Python | `python-django`, `python-flask`, `python-fastapi`, `python-generic` |
+| Go | `go-generic`, `go-gin`, `go-echo` |
+| PHP | `php-laravel`, `php-symfony`, `php-generic` |
+| Ruby | `ruby-rails`, `ruby-sinatra` |
+| Java / Kotlin | `java-spring`, `java-quarkus`, `kotlin-spring` |
+| Rust | `rust-axum`, `rust-actix`, `rust-generic` |
+| .NET | `dotnet` |
+| Elixir | `elixir-phoenix` |
+
+Plain names such as `django`, `laravel`, `rails`, `python` or `go` are accepted and mapped to these. An unknown value is rejected instead of silently building as Node.js.
 
 Any flag that describes the build skips the interactive wizard. Anything you leave out is auto-detected from the repo.
 

@@ -44,7 +44,14 @@ function runCli(args, { url, until, timeoutMs = 15000, stdin = '' } = {}) {
     let out = '';
     child.stdout.on('data', d => (out += d));
     child.stderr.on('data', d => (out += d));
-    child.stdin.end(stdin);
+    // `stdin` is a string, or an array of lines typed one after another with a
+    // short pause so each interactive prompt (which opens its own readline) sees its answer.
+    if (Array.isArray(stdin)) {
+      stdin.forEach((line, i) => setTimeout(() => { try { child.stdin.write(line + '\n'); } catch (_) {} }, 400 * (i + 1)));
+      setTimeout(() => { try { child.stdin.end(); } catch (_) {} }, 400 * (stdin.length + 2));
+    } else {
+      child.stdin.end(stdin);
+    }
     let killed = false;
     const done = (code) => { clearInterval(iv); clearTimeout(to); resolve({ code, out, killed }); };
     const iv = setInterval(() => { if (until && until()) { killed = true; child.kill('SIGKILL'); } }, 50);
