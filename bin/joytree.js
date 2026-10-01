@@ -22,6 +22,7 @@ const apibuilder = require('../commands/apibuilder');
 const registrar  = require('../commands/registrar');
 const misc       = require('../commands/misc');
 const blueprint  = require('../commands/blueprint');
+const firewall   = require('../commands/firewall');
 const ui         = require('../lib/ui');
 
 function showHelp() {
@@ -67,6 +68,21 @@ function showHelp() {
   row('joytree blueprint plan',              'Preview a Blueprint - nothing is created');
   row('joytree blueprint deploy',            'Deploy all its services and databases at once');
   row('joytree blueprint browse [dir]',      'List repo files to find a Blueprint');
+
+  section('\u25c6', 'Firewall (Pro plan and above)');
+  row('joytree firewall show <project>',     'Rules, blocked IPs, protections, Attack Mode');
+  row('joytree firewall rule add <project>', 'Add a rule: --name --if "path starts_with /x" --action');
+  row('joytree firewall rule enable|disable|delete', 'Manage a rule by id or name');
+  row('joytree firewall rule move <p> <rule>', 'Reorder: --to <n> | --top | --bottom');
+  row('joytree firewall block <p> <ips...>', 'Block IPs / CIDRs (--expires 24h --note ..)');
+  row('joytree firewall unblock <p> <ips..>','Remove IPs from the block list');
+  row('joytree firewall bypass add|remove',  'Manage the bypass (allow-through) list');
+  row('joytree firewall set <p> ddos k=v',   'Update bots | ddos | owasp | headers | responses');
+  row('joytree firewall attack <p> on|off',  'Toggle Attack Mode (--minutes 15|60|360|1440)');
+  row('joytree firewall test <project>',     'Dry-run a request: --path --ip --country ..');
+  row('joytree firewall events <project>',   'Recent firewall events (--action deny)');
+  row('joytree firewall analytics <project>','Allowed / blocked counts and top offenders');
+  row('joytree firewall insights <project>', 'Automatic hardening recommendations');
 
   section('◈', 'Projects');
   row('joytree projects',                    'List all your projects');
@@ -244,6 +260,66 @@ withBlueprintSource(blueprintGroup.command('deploy'))
   .option('-y, --yes', 'Skip prompts and the confirmation')
   .action(blueprint.deploy);
 withBlueprintSource(blueprintGroup.command('browse [dir]')).action(blueprint.browse);
+
+// -- Firewall --------------------------------------------------------------
+const fwGroup = program.command('firewall').alias('fw');
+const jsonFlag = (cmd) => cmd.option('--json', 'Print the raw JSON response');
+jsonFlag(fwGroup.command('show <project>')).action(firewall.show);
+
+const fwRule = fwGroup.command('rule');
+fwRule.command('add <project>')
+  .option('--name <name>', 'Rule name')
+  .option('--description <text>')
+  .option('--if <condition>', 'Condition "<field> <op> <value>", e.g. "path starts_with /admin" (repeatable; all must match)', collectOpt, [])
+  .option('--action <type>', 'log | deny | challenge | bypass | rate_limit | redirect')
+  .option('--status <code>', 'deny / redirect status code')
+  .option('--message <text>', 'deny message')
+  .option('--requests <n>', 'rate_limit: max requests per window')
+  .option('--window <seconds>', 'rate_limit: window length in seconds')
+  .option('--by <key>', 'rate_limit: count per ip | ip_ua | path_ip | header')
+  .option('--header-name <name>', 'rate_limit: header to count by when --by header')
+  .option('--on-exceed <action>', 'rate_limit: deny | challenge | log')
+  .option('--location <url>', 'redirect target (https://... or /path)')
+  .option('--disabled', 'Create the rule switched off')
+  .option('--rule <json>', 'Full rule as JSON, or @file.json (replaces the flags above)')
+  .action(firewall.ruleAdd);
+fwRule.command('enable <project> <rule>').action(firewall.ruleEnable);
+fwRule.command('disable <project> <rule>').action(firewall.ruleDisable);
+fwRule.command('delete <project> <rule>').action(firewall.ruleDelete);
+fwRule.command('move <project> <rule>')
+  .option('--to <position>', 'New position, starting at 1')
+  .option('--top', 'Move to the top')
+  .option('--bottom', 'Move to the bottom')
+  .action(firewall.ruleMove);
+
+fwGroup.command('block <project> <ips...>')
+  .option('--host <hostname>', 'Only for this hostname (default: all)')
+  .option('--note <text>')
+  .option('--expires <when>', 'never | 1h | 24h | 7d | 30d')
+  .action(firewall.block);
+fwGroup.command('unblock <project> <ips...>').action(firewall.unblock);
+const fwBypass = fwGroup.command('bypass');
+fwBypass.command('add <project> <ips...>').option('--host <hostname>').option('--note <text>').action(firewall.bypassAdd);
+fwBypass.command('remove <project> <ips...>').action(firewall.bypassRemove);
+
+fwGroup.command('set <project> <section> <settings...>').description('section: bots | ddos | owasp | headers | responses; settings: key=value (dotted for nested)').action(firewall.set);
+fwGroup.command('attack <project> <state>').option('--minutes <n>', '15 | 60 | 360 | 1440').action(firewall.attack);
+jsonFlag(fwGroup.command('test <project>'))
+  .option('--path <path>', 'Request path, e.g. /admin?x=1')
+  .option('--method <method>')
+  .option('--ip <ip>')
+  .option('--country <code>')
+  .option('--host <hostname>')
+  .option('--ua <user-agent>')
+  .option('--referer <url>')
+  .option('--scheme <http|https>')
+  .option('--rule-json <json>', 'Test an unsaved rule instead (JSON, or @file.json)')
+  .action(firewall.test);
+jsonFlag(fwGroup.command('events <project>'))
+  .option('--limit <n>').option('--action <action>').option('--source <source>').option('--q <text>')
+  .action(firewall.events);
+jsonFlag(fwGroup.command('analytics <project>')).option('--range <range>', 'e.g. 1h, 24h, 7d').action(firewall.analytics);
+jsonFlag(fwGroup.command('insights <project>')).action(firewall.insights);
 
 program.command('projects').option('--json').action(projects.list);
 program.command('inspect <project-id>').action(projects.inspect);
