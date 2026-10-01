@@ -4,7 +4,7 @@ const readline = require('readline');
 const { api }  = require('../lib/api');
 const config   = require('../lib/config');
 const ui       = require('../lib/ui');
-const { VARIANTS, PRESET_RUNTIME, normalizeRuntime, versionField } = require('../lib/runtimes');
+const { VARIANTS, PRESET_RUNTIME, normalizeRuntime, isKnownRuntime, fetchLiveRuntimes, versionField } = require('../lib/runtimes');
 
 // ── Framework presets (mirrors the dashboard exactly) ─────────────────────────
 const FRAMEWORKS = [
@@ -230,7 +230,7 @@ async function pollStatus(projectId, timeoutMs = 300000, isWorker = false) {
 // understands. Throws an Error with a user-facing message on invalid input.
 // `active` is true when any flag fully describes the build, so the
 // interactive wizard is skipped (envs alone do not count).
-function parseDeployFlags(opts = {}) {
+function parseDeployFlags(opts = {}, live = null) {
   const extras = {};
   if (opts.worker) extras.isWorker = true;
   if (opts.dockerfile) {
@@ -239,7 +239,7 @@ function parseDeployFlags(opts = {}) {
   }
   if (opts.dockerCmd)  extras.dockerCommand    = String(opts.dockerCmd).trim();
   if (opts.preDeploy)  extras.preDeployCommand = String(opts.preDeploy).trim();
-  if (opts.runtime)    extras.runtime          = normalizeRuntime(opts.runtime);
+  if (opts.runtime)    extras.runtime          = normalizeRuntime(opts.runtime, live);
   if (opts.workdir)    extras.workingDir       = String(opts.workdir).trim();
   if (opts.port !== undefined) {
     const n = Number(opts.port);
@@ -297,8 +297,11 @@ async function deployGit(opts) {
   let { repo, branch, name, build, start, static: isStatic } = opts;
 
   // Validate the build flags first so a typo fails fast, before any prompts.
+  // A runtime the bundled list doesn't know may still exist on the server
+  // (it owns the list), so ask it before rejecting.
+  const live = (opts.runtime && !isKnownRuntime(opts.runtime)) ? await fetchLiveRuntimes(api) : null;
   let flags;
-  try { flags = parseDeployFlags(opts); }
+  try { flags = parseDeployFlags(opts, live); }
   catch (err) { ui.error(err.message); process.exit(1); }
 
   // Repo

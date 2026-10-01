@@ -57,7 +57,7 @@ test('CLI: an unknown --runtime fails before any request', async () => {
     const r = await runCli(['deploy', '--repo', 'https://github.com/a/site', '--runtime', 'cobol', '--yes'], { url: mock.url });
     assert.strictEqual(r.code, 1);
     assert.match(r.out, /Unknown runtime/);
-    assert.strictEqual(mock.requests.length, 0);
+    assert.ok(!mock.requests.some(q => q.path === '/api/deploy'), 'nothing was deployed');
   } finally { await mock.close(); }
 });
 
@@ -91,4 +91,44 @@ test('wizard: language choices ask for the framework and send the matching runti
 test('wizard: Next.js records node-nextjs; Auto-detect sends no runtime', async () => {
   await wizard(['5', '', ''], b => assert.strictEqual(b.runtime, 'node-nextjs'));
   await wizard(['1', ''], b => assert.ok(!b.runtime, 'auto-detect must leave runtime blank'));
+});
+
+test('normalizeRuntime: live list is consulted after the bundled one', () => {
+  const live = { runtimes: ['node', 'swift-vapor'], aliases: { vapor: 'swift-vapor' } };
+  assert.strictEqual(normalizeRuntime('swift-vapor', live), 'swift-vapor');
+  assert.strictEqual(normalizeRuntime('Vapor', live), 'swift-vapor');
+  assert.strictEqual(normalizeRuntime('django', live), 'python-django');
+  assert.throws(() => normalizeRuntime('cobol', live), /swift-vapor/);
+  assert.throws(() => normalizeRuntime('swift-vapor'), /Unknown runtime/);
+});
+
+test('fetchLiveRuntimes: parses the payload, returns null on failure or junk', async () => {
+  const { fetchLiveRuntimes, isKnownRuntime } = require('../lib/runtimes');
+  const ok = await fetchLiveRuntimes({ get: async () => ({ ok: true, runtimes: ['a'], aliases: { b: 'a' } }) });
+  assert.deepStrictEqual(ok, { runtimes: ['a'], aliases: { b: 'a' } });
+  assert.strictEqual(await fetchLiveRuntimes({ get: async () => { throw new Error('HTTP 404'); } }), null);
+  assert.strictEqual(await fetchLiveRuntimes({ get: async () => ({ ok: true }) }), null);
+  assert.strictEqual(isKnownRuntime('django'), true);
+  assert.strictEqual(isKnownRuntime('swift-vapor'), false);
+});
+
+test('CLI: --runtime unknown to the bundled list but known to the server is accepted', async () => {
+  const mock = await startMock({
+    'GET /api/v1/runtimes': () => ({ ok: true, runtimes: ['node', 'swift-vapor'], aliases: { vapor: 'swift-vapor' } }),
+    'POST /api/deploy': () => ({ ok: true, deployId: 'd1' }),
+  });
+  try {
+    await runCli(['deploy', '--repo', 'https://github.com/a/site', '--name', 'site', '--runtime', 'vapor', '--yes'],
+      { url: mock.url, until: () => mock.requests.some(q => q.path === '/api/deploy') });
+    assert.strictEqual(mock.requests.find(q => q.path === '/api/deploy').body.runtime, 'swift-vapor');
+  } finally { await mock.close(); }
+});
+
+test('CLI: known --runtime never calls the live endpoint', async () => {
+  const mock = await startMock({ 'POST /api/deploy': () => ({ ok: true, deployId: 'd1' }) });
+  try {
+    await runCli(['deploy', '--repo', 'https://github.com/a/site', '--name', 'site', '--runtime', 'go-gin', '--yes'],
+      { url: mock.url, until: () => mock.requests.some(q => q.path === '/api/deploy') });
+    assert.ok(!mock.requests.some(q => q.path === '/api/v1/runtimes'));
+  } finally { await mock.close(); }
 });
