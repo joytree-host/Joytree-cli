@@ -186,13 +186,26 @@ pullGroup.command('repos').action(github.repos);
 pullGroup.command('branches <repo-url>').action(github.branches);
 
 // ── Deploy ────────────────────────────────────────────────────────────
+const collectOpt = (val, prev) => prev.concat([val]);
 program.command('deploy')
   .option('-r, --repo <url>')
   .option('-b, --branch <branch>')
   .option('-n, --name <name>')
-  .option('--build <cmd>')
-  .option('--start <cmd>')
-  .option('--static')
+  .option('--build <cmd>', 'Build command')
+  .option('--start <cmd>', 'Start command')
+  .option('--install <cmd>', 'Install command')
+  .option('--output <dir>', 'Output directory (static sites)')
+  .option('--node <version>', 'Node.js version, e.g. 20')
+  .option('--runtime <name>', 'Force a runtime: node, python, go, php, ruby, java, dotnet, rust, bun, deno ...')
+  .option('--workdir <dir>', 'Sub-directory to build and run from (monorepos)')
+  .option('--static', 'Deploy as a static site')
+  .option('--worker', 'Deploy as a Background Worker: long-running process, no public URL (needs --start)')
+  .option('--dockerfile [path]', 'Build from a Dockerfile (default path: Dockerfile)')
+  .option('--docker-cmd <cmd>', 'Override the Dockerfile CMD')
+  .option('--port <n>', 'Port the app listens on inside the container (default 3000)')
+  .option('--pre-deploy <cmd>', 'Command to run after build and before going live, e.g. a migration')
+  .option('-e, --env <KEY=VALUE>', 'Environment variable (repeatable)', collectOpt, [])
+  .option('-y, --yes', 'Skip all prompts and the confirmation')
   .option('-m, --message <msg>')
   .action(deploy.deployGit);
 

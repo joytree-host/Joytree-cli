@@ -149,7 +149,7 @@ async function resolveProjectId(projectId) {
 }
 
 // ── Poll build status — uses /api/workspace (Firebase-backed, no Mongo) ───────
-async function pollStatus(projectId, timeoutMs = 300000) {
+async function pollStatus(projectId, timeoutMs = 300000, isWorker = false) {
   const start  = Date.now();
   const frames = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
   let   i      = 0;
@@ -176,6 +176,11 @@ async function pollStatus(projectId, timeoutMs = 300000) {
           if (status === 'success') {
             clearInterval(iv);
             if (isTTY) process.stdout.write('\r\x1b[K');
+            if (isWorker) {
+              console.log(`\n${ui.c.green}${ui.c.bold}Worker is running.${ui.c.reset} ${ui.c.dim}(Background Workers have no public URL)${ui.c.reset}\n`);
+              ui.info(`Follow its output: ${ui.c.cyan}joytree logs ${projectId} --follow${ui.c.reset}`);
+              return 'success';
+            }
             console.log(`\n${ui.c.green}${ui.c.bold}🎉 🎉 🎉  Congratulations! Your site is live!  🎉 🎉 🎉${ui.c.reset}\n`);
             ui.label('Live URL', `${ui.c.cyan}${ui.c.bold}https://${projectId}.joytree.site${ui.c.reset}`);
             console.log();
@@ -204,13 +209,77 @@ async function pollStatus(projectId, timeoutMs = 300000) {
 }
 
 // ── Deploy ────────────────────────────────────────────────────────────────────
+// Turn the extra `joytree deploy` flags into the fields POST /api/deploy
+// understands. Throws an Error with a user-facing message on invalid input.
+// `active` is true when any flag fully describes the build, so the
+// interactive wizard is skipped (envs alone do not count).
+function parseDeployFlags(opts = {}) {
+  const extras = {};
+  if (opts.worker) extras.isWorker = true;
+  if (opts.dockerfile) {
+    extras.isDockerfileDeploy = true;
+    extras.dockerfilePath = typeof opts.dockerfile === 'string' ? opts.dockerfile.trim() : 'Dockerfile';
+  }
+  if (opts.dockerCmd)  extras.dockerCommand    = String(opts.dockerCmd).trim();
+  if (opts.preDeploy)  extras.preDeployCommand = String(opts.preDeploy).trim();
+  if (opts.runtime)    extras.runtime          = String(opts.runtime).trim();
+  if (opts.workdir)    extras.workingDir       = String(opts.workdir).trim();
+  if (opts.port !== undefined) {
+    const n = Number(opts.port);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error('--port must be a whole number between 1 and 65535.');
+    extras.exposedPort = n;
+  }
+
+  if (opts.worker && opts.static) throw new Error('--worker and --static cannot be combined: a Background Worker is a running process, not a static site.');
+  if (opts.worker && opts.dockerfile) throw new Error('--worker and --dockerfile cannot be combined in one deploy: the Dockerfile build path does not apply Background Worker mode. Deploy the worker without --dockerfile.');
+  if (opts.worker && !opts.start) throw new Error('--worker needs --start "<command>" (the command that runs your worker).');
+
+  const active = !!(opts.build || opts.start || opts.static || opts.install || opts.output || opts.node || Object.keys(extras).length);
+
+  const envList = Array.isArray(opts.env) ? opts.env : (opts.env ? [opts.env] : []);
+  if (envList.length) {
+    const envVars = {};
+    for (const pair of envList) {
+      const i = String(pair).indexOf('=');
+      const key = i > 0 ? String(pair).slice(0, i).trim() : '';
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`Invalid --env "${pair}". Use KEY=VALUE (KEY may contain letters, digits and underscores).`);
+      envVars[key] = String(pair).slice(i + 1);
+    }
+    extras.envVars = envVars;
+  }
+  return { extras, active };
+}
+
+// Build settings to send on `joytree redeploy`: the project's saved worker /
+// Dockerfile / runtime options. /api/deploy overwrites these on every call, so
+// leaving them out used to quietly turn a worker or Dockerfile project back
+// into a plain web service.
+function storedDeployFields(proj = {}) {
+  const out = {};
+  for (const k of ['runtime', 'pythonVer', 'goVer', 'phpVer', 'rubyVer', 'javaVer', 'dotnetVer', 'workingDir', 'dockerCommand', 'preDeployCommand']) {
+    if (typeof proj[k] === 'string' && proj[k].trim()) out[k] = proj[k].trim();
+  }
+  out.isWorker = !!proj.isWorker;
+  out.isDockerfileDeploy = !!proj.isDockerfileDeploy;
+  if (proj.isDockerfileDeploy && typeof proj.dockerfilePath === 'string' && proj.dockerfilePath.trim()) out.dockerfilePath = proj.dockerfilePath.trim();
+  const port = Number(proj.exposedPort);
+  if (Number.isInteger(port) && port > 0 && port < 65536) out.exposedPort = port;
+  return out;
+}
+
 async function deployGit(opts) {
   if (!config.getApiKey()) { ui.error('Not logged in. Run: joytree login'); process.exit(1); }
 
   let { repo, branch, name, build, start, static: isStatic } = opts;
 
+  // Validate the build flags first so a typo fails fast, before any prompts.
+  let flags;
+  try { flags = parseDeployFlags(opts); }
+  catch (err) { ui.error(err.message); process.exit(1); }
+
   // Repo
   if (!repo) {
+    if (opts.yes) { ui.error('--yes needs --repo <url>.'); process.exit(1); }
     repo = await ask(`${ui.c.bold}GitHub repo URL${ui.c.reset}`);
     if (!repo) { ui.error('Repository URL is required.'); process.exit(1); }
   }
@@ -218,23 +287,26 @@ async function deployGit(opts) {
   // Name
   if (!name) {
     const guessed = repo.split('/').pop().replace(/\.git$/, '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    name = await ask(`${ui.c.bold}Project name/subdomain${ui.c.reset}`, guessed);
+    name = opts.yes ? guessed : await ask(`${ui.c.bold}Project name/subdomain${ui.c.reset}`, guessed);
   }
 
   // Branch
   if (!branch) {
-    branch = await ask(`${ui.c.bold}Branch${ui.c.reset}`, 'main');
+    branch = opts.yes ? 'main' : await ask(`${ui.c.bold}Branch${ui.c.reset}`, 'main');
   }
 
   // Build settings — skip if flags were passed, otherwise run wizard
   let settings;
-  const hasFlags = build || start || isStatic;
+  const hasFlags = flags.active;
+  const isWorker = !!flags.extras.isWorker;
+  const isDocker = !!flags.extras.isDockerfileDeploy;
   if (hasFlags) {
     settings = {
-      install:  '',
+      install:  opts.install || '',
       build:    build  || '',
       start:    start  || '',
-      output:   'dist',
+      // Workers and Dockerfile builds are never static; the dashboard sends '.'
+      output:   opts.output || ((isWorker || isDocker) ? '.' : 'dist'),
       // [FIX] Was `isStatic ? 'static' : (start ? 'server' : 'static')` --
       // forced 'static' any time neither --static nor --start was passed,
       // even if the person only meant to override --build and wanted the
@@ -243,10 +315,13 @@ async function deployGit(opts) {
       // explicit --start implies server, and otherwise siteType is left
       // blank so the server's real post-clone detection gets to run instead
       // of being pre-empted here.
-      siteType: isStatic ? 'static' : (start ? 'server' : ''),
-      nodeVer:  '20',
+      siteType: isStatic ? 'static' : ((start || isWorker || isDocker) ? 'server' : ''),
+      nodeVer:  opts.node || '20',
       framework:'auto',
     };
+  } else if (opts.yes) {
+    // Non-interactive with no build flags: let the server detect everything.
+    settings = { install: '', build: '', start: '', output: '', siteType: '', nodeVer: '', framework: 'auto' };
   } else {
     console.log(`\n${ui.c.bold}${ui.c.cyan}Build Configuration${ui.c.reset}`);
     ui.divider();
@@ -265,11 +340,20 @@ async function deployGit(opts) {
   if (settings.build)   ui.label('Build',     settings.build);
   if (settings.start)   ui.label('Start',     settings.start);
   if (settings.output)  ui.label('Output dir',settings.output);
-  ui.label('Node ver',  settings.nodeVer);
-  ui.label('URL',       `https://${name}.joytree.site`);
+  if (settings.nodeVer) ui.label('Node ver',  settings.nodeVer);
+  const x = flags.extras;
+  if (x.runtime)            ui.label('Runtime',    x.runtime);
+  if (x.workingDir)         ui.label('Work dir',   x.workingDir);
+  if (isWorker)             ui.label('Mode',       'Background Worker (no public URL)');
+  if (isDocker)             ui.label('Dockerfile', x.dockerfilePath);
+  if (x.dockerCommand)      ui.label('Docker CMD', x.dockerCommand);
+  if (x.exposedPort)        ui.label('Port',       String(x.exposedPort));
+  if (x.preDeployCommand)   ui.label('Pre-deploy', x.preDeployCommand);
+  if (x.envVars)            ui.label('Env vars',   `${Object.keys(x.envVars).length} set`);
+  if (!isWorker) ui.label('URL', `https://${name}.joytree.site`);
   console.log();
 
-  const go = await confirm(`${ui.c.bold}Deploy now?${ui.c.reset}`, true);
+  const go = opts.yes ? true : await confirm(`${ui.c.bold}Deploy now?${ui.c.reset}`, true);
   if (!go) { ui.info('Cancelled.'); return; }
 
   const spin = ui.spinner(`Triggering deploy for ${ui.c.bold}${name}${ui.c.reset}`);
@@ -287,12 +371,13 @@ async function deployGit(opts) {
       nodeVer:    settings.nodeVer,
       workingDir: '',
       source:     'cli',
+      ...flags.extras,
     });
 
     spin.stop();
     ui.label('Deploy ID', data.deployId || '—');
     console.log();
-    await pollStatus(name);
+    await pollStatus(name, undefined, isWorker);
     console.log(`${ui.c.dim}View logs: ${ui.c.cyan}joytree logs ${name} --follow${ui.c.reset}\n`);
 
   } catch (err) {
@@ -329,11 +414,12 @@ async function redeploy(projectId) {
       siteType:   proj.siteType     || (proj.isStatic ? 'static' : 'server'),
       nodeVer:    proj.nodeVersion  || '20',
       source:     'cli',
+      ...storedDeployFields(proj),
     });
     spin2.stop();
     ui.label('Deploy ID', data.deployId || '—');
     console.log();
-    await pollStatus(projectId);
+    await pollStatus(projectId, undefined, !!proj.isWorker);
     console.log();
   } catch (err) {
     ui.error(`Redeploy failed: ${err.message}`);
@@ -378,4 +464,4 @@ async function listDeployments(projectId, opts) {
   }
 }
 
-module.exports = { deployGit, redeploy, open, listDeployments };
+module.exports = { deployGit, redeploy, open, listDeployments, parseDeployFlags, storedDeployFields };
