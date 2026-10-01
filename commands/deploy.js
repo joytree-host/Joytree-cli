@@ -30,7 +30,8 @@ const FRAMEWORKS = [
   { key: 'elixir',     label: 'Elixir',       install: '',                                        build: '',                    start: '',                                  output: '.',     siteType: 'server'  },
 ];
 // Record the runtime for presets that have a fixed one (the dashboard does the
-// same). Bun, Deno and .NET are not auto-detected server-side.
+// same). Bun, Deno and .NET are sent explicitly when picked; the server also
+// detects them from repo files when Runtime is left blank.
 for (const f of FRAMEWORKS) f.runtime = PRESET_RUNTIME[f.key] || '';
 
 const NODE_VERSIONS = ['18', '20', '22'];

@@ -85,7 +85,7 @@ joytree logs my-site --follow
 
 **Runtimes and frameworks**
 
-Leave `--runtime` out to auto-detect: PHP, Python, Go, Ruby, Rust, Java/Kotlin and Elixir repos are recognised from their files, and Node.js is the default. **.NET, Bun and Deno are not auto-detected, so set `--runtime` for them.** The interactive wizard asks for the framework within a language and sets the runtime for you.
+Leave `--runtime` out to auto-detect: PHP, Python, Go, Ruby, Rust, Java/Kotlin, Elixir, .NET (`*.csproj`/`*.sln`), Bun (`bun.lockb`/`bun.lock`) and Deno (`deno.json`) repos are recognised from their files, and Node.js is the default. The interactive wizard asks for the framework within a language and sets the runtime for you.
 
 | Language | `--runtime` values |
 |---|---|

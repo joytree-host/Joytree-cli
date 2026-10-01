@@ -74,7 +74,7 @@ async function wizard(answers, expect) {
   } finally { await mock.close(); }
 }
 
-test('wizard: Bun and Deno now send their runtime (they are not auto-detected server-side)', async () => {
+test('wizard: Bun and Deno send their runtime explicitly when picked', async () => {
   await wizard(['9', '', ''], b => { assert.strictEqual(b.runtime, 'bun'); assert.strictEqual(b.siteType, 'server'); });
   await wizard(['10', '', ''], b => assert.strictEqual(b.runtime, 'deno'));
   await wizard(['15', '', ''], b => assert.strictEqual(b.runtime, 'dotnet'));
