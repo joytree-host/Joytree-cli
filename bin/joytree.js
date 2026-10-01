@@ -23,6 +23,7 @@ const registrar  = require('../commands/registrar');
 const misc       = require('../commands/misc');
 const blueprint  = require('../commands/blueprint');
 const firewall   = require('../commands/firewall');
+const observe    = require('../commands/observe');
 const ui         = require('../lib/ui');
 
 function showHelp() {
@@ -83,6 +84,21 @@ function showHelp() {
   row('joytree firewall events <project>',   'Recent firewall events (--action deny)');
   row('joytree firewall analytics <project>','Allowed / blocked counts and top offenders');
   row('joytree firewall insights <project>', 'Automatic hardening recommendations');
+
+  section('\u25c6', 'Observability');
+  row('joytree observe summary',             'Traffic, errors and latency across projects');
+  row('joytree observe resources',           'Live CPU / memory / uptime per project and DB');
+  row('joytree observe series <metric>',     'One metric over time with a chart (--range 6h)');
+  row('joytree observe requests --status 5xx','Search recent requests; --group-by path');
+  row('joytree observe cache',               'CDN cache hit rate and top missed assets');
+  row('joytree observe alerts',              'Alert rules, their state and history');
+  row('joytree observe alert add|update|delete','Manage alert rules (--webhook https://..)');
+  row('joytree metrics <project>',           'Live container metrics for one project');
+
+  section('\u25c6', 'Rollback & CDN');
+  row('joytree rollback <deployment-id>',    'Redeploy an earlier successful build (see ids in `deployments`)');
+  row('joytree cdn <project> status|on|off', 'Check or toggle the CDN for a project');
+  row('joytree cdn <project> purge',         'Clear cached copies so visitors get fresh content');
 
   section('◈', 'Projects');
   row('joytree projects',                    'List all your projects');
@@ -320,6 +336,35 @@ jsonFlag(fwGroup.command('events <project>'))
   .action(firewall.events);
 jsonFlag(fwGroup.command('analytics <project>')).option('--range <range>', 'e.g. 1h, 24h, 7d').action(firewall.analytics);
 jsonFlag(fwGroup.command('insights <project>')).action(firewall.insights);
+
+// -- Observability, rollback, CDN -------------------------------------------
+const obsGroup = program.command('observe');
+const rangeOpt = (cmd) => cmd.option('--range <range>', '15m | 1h | 6h | 24h | 7d | 30d').option('--project <project>', 'Limit to one project (id or subdomain)').option('--json', 'Print the raw JSON response');
+rangeOpt(obsGroup.command('summary')).action(observe.summary);
+obsGroup.command('resources').option('--json').action(observe.resources);
+rangeOpt(obsGroup.command('series <metric>')).option('--resource <key>', 'For cpu / mem_* / net_*: key from `observe resources`').action(observe.series);
+rangeOpt(obsGroup.command('requests'))
+  .option('--status <filter>', '5xx | 4xx | error | comma-separated codes')
+  .option('--method <method>').option('--path <path>').option('--cache <status>', 'HIT | MISS | BYPASS | DYNAMIC | REVALIDATED')
+  .option('--country <code>').option('--min-ms <n>', 'Only requests slower than this').option('--limit <n>')
+  .option('--sort <key>', 'time | duration | bytes')
+  .option('--group-by <field>', 'path | status | status_class | method | country | cache | project')
+  .option('--metric <metric>', 'With --group-by: count | errors | error_rate | avg_ms | p95_ms | bytes')
+  .action(observe.requests);
+rangeOpt(obsGroup.command('cache')).action(observe.cache);
+obsGroup.command('alerts').option('--json').action(observe.alerts);
+const alertGroup = obsGroup.command('alert');
+const alertFlags = (cmd) => cmd
+  .option('--name <name>').option('--metric <metric>', 'down, requests, errors, error_rate, latency_p95, cpu, mem_pct ...')
+  .option('--op <op>', '> or <').option('--threshold <n>').option('--window <minutes>', 'Evaluation window, 1-60 (default 5)')
+  .option('--severity <level>', 'warning | critical').option('--target <target>', 'all | project:<id> | database:<id>')
+  .option('--webhook <url>', 'https:// URL called when the alert fires and resolves');
+alertFlags(alertGroup.command('add')).option('--disabled', 'Create it switched off').action(observe.alertAdd);
+alertFlags(alertGroup.command('update <rule>')).option('--clear-webhook', 'Remove the webhook').option('--enable').option('--disable').action(observe.alertUpdate);
+alertGroup.command('delete <rule>').option('-y, --yes').action(observe.alertDelete);
+program.command('metrics <project>').option('--json').action(observe.metrics);
+program.command('rollback <deployment-id>').option('-y, --yes', 'Skip the confirmation').action(observe.rollback);
+program.command('cdn <project> <action>').description('action: status | on | off | purge').action(observe.cdn);
 
 program.command('projects').option('--json').action(projects.list);
 program.command('inspect <project-id>').action(projects.inspect);

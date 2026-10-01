@@ -455,6 +455,10 @@ async function listDeployments(projectId, opts) {
       const ts = d.startedAt || d.createdAt ? new Date(d.startedAt || d.createdAt).toLocaleString() : '—';
       console.log(`  ${ui.statusBadge(d.status)}  ${ui.c.bold}${d.subdomain || d.projectName || d.projectId || '—'}${ui.c.reset}  ${ui.c.dim}${ts}${ui.c.reset}`);
       if (d.branch) console.log(`     ${ui.c.dim}branch: ${d.branch}${d.duration ? `  ${d.duration}s` : ''}${ui.c.reset}`);
+      // The id is what `joytree rollback` and `joytree stop` take.
+      const did = d.id || d._id || d.deployId;
+      const sha = d.triggerSha || d.commit || d.sha;
+      if (did) console.log(`     ${ui.c.dim}id: ${did}${sha ? `  commit: ${String(sha).slice(0, 7)}` : ''}${ui.c.reset}`);
     });
     console.log();
   } catch (err) {
