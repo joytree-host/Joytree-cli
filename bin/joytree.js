@@ -21,6 +21,7 @@ const agent      = require('../commands/agent');
 const apibuilder = require('../commands/apibuilder');
 const registrar  = require('../commands/registrar');
 const misc       = require('../commands/misc');
+const blueprint  = require('../commands/blueprint');
 const ui         = require('../lib/ui');
 
 function showHelp() {
@@ -58,6 +59,14 @@ function showHelp() {
   row('joytree deployments [project-id]',    'Show recent deployments');
   row('joytree open <project-id>',           'Open live URL in your browser');
   row('joytree upload --dir ./myapp',        'Deploy from a local folder (no git)');
+  row('joytree deploy --worker --start ..',  'Deploy a Background Worker (no public URL)');
+  row('joytree deploy --dockerfile [path]',  'Build from a Dockerfile (--port, --docker-cmd)');
+  row('joytree deploy -e KEY=VALUE -y',      'Set env vars; -y skips every prompt (CI-friendly)');
+
+  section('\u25c6', 'Blueprints (joytree.joy)');
+  row('joytree blueprint plan',              'Preview a Blueprint - nothing is created');
+  row('joytree blueprint deploy',            'Deploy all its services and databases at once');
+  row('joytree blueprint browse [dir]',      'List repo files to find a Blueprint');
 
   section('◈', 'Projects');
   row('joytree projects',                    'List all your projects');
@@ -220,6 +229,22 @@ program.command('upload')
   .action(misc.uploadDeploy);
 
 // ── Projects ──────────────────────────────────────────────────────────
+// -- Blueprints ----------------------------------------------------------
+const blueprintGroup = program.command('blueprint');
+const withBlueprintSource = (cmd) => cmd
+  .option('-r, --repo <url>', 'GitHub repo (default: this folder\'s git remote)')
+  .option('-b, --branch <branch>', 'Branch (default: current branch)')
+  .option('-f, --file <path>', 'Blueprint path if it is not joytree.joy at the repo root')
+  .option('--json', 'Print the raw JSON response');
+withBlueprintSource(blueprintGroup.command('plan')).action(blueprint.plan);
+withBlueprintSource(blueprintGroup.command('deploy'))
+  .option('-e, --env <SERVICE.KEY=VALUE>', 'Value for a required env var (repeatable)', collectOpt, [])
+  .option('--rename-service <old=new>', 'Deploy a service under a different name (repeatable)', collectOpt, [])
+  .option('--rename-db <old=new>', 'Create a database under a different name (repeatable)', collectOpt, [])
+  .option('-y, --yes', 'Skip prompts and the confirmation')
+  .action(blueprint.deploy);
+withBlueprintSource(blueprintGroup.command('browse [dir]')).action(blueprint.browse);
+
 program.command('projects').option('--json').action(projects.list);
 program.command('inspect <project-id>').action(projects.inspect);
 program.command('delete <project-id>').option('-y, --yes').action(projects.deleteProject);
