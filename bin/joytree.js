@@ -24,6 +24,7 @@ const misc       = require('../commands/misc');
 const blueprint  = require('../commands/blueprint');
 const firewall   = require('../commands/firewall');
 const observe    = require('../commands/observe');
+const watchCmd   = require('../commands/watch');
 const ui         = require('../lib/ui');
 
 function showHelp() {
@@ -61,6 +62,7 @@ function showHelp() {
   row('joytree deployments [project-id]',    'Show recent deployments');
   row('joytree open <project-id>',           'Open live URL in your browser');
   row('joytree upload --dir ./myapp',        'Deploy from a local folder (no git)');
+  row('joytree watch [folder]',              'Auto-deploy any .zip/.tar.gz/.html that lands in a folder');
   row('joytree deploy --worker --start ..',  'Deploy a Background Worker (no public URL)');
   row('joytree deploy --dockerfile [path]',  'Build from a Dockerfile (--port, --docker-cmd)');
   row('joytree deploy -e KEY=VALUE -y',      'Set env vars; -y skips every prompt (CI-friendly)');
@@ -260,6 +262,16 @@ program.command('upload')
   .option('--dir <path>', '', '.')
   .option('-n, --name <name>')
   .action(misc.uploadDeploy);
+program.command('watch [dir]')
+  .description('Watch a folder and automatically upload + redeploy every new or updated .zip / .tar.gz / .tgz / .html (my-site.zip -> project "my-site")')
+  .option('-p, --project <name>', 'Send every file to this one project instead of naming it from the file')
+  .option('--create', 'Create a new project when no project matches the file name')
+  .option('--deploy-existing', 'Also deploy files already in the folder when watching starts')
+  .option('--interval <sec>', 'How often to check the folder', '3')
+  .option('--stable <sec>', 'Wait until a file has stopped changing this long (finishes downloads)', '3')
+  .option('--once', 'Deploy what is in the folder now, then exit (CI-friendly)')
+  .option('--no-wait', 'Do not follow the build result after each deploy')
+  .action(watchCmd.watch);
 
 // ── Projects ──────────────────────────────────────────────────────────
 // -- Blueprints ----------------------------------------------------------

@@ -39,7 +39,7 @@ function runCli(args, { url, until, timeoutMs = 15000, stdin = '' } = {}) {
   return new Promise((resolve) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jt-home-'));
     const child = spawn(process.execPath, [BIN, ...args], {
-      env: { ...process.env, HOME: home, USERPROFILE: home, JOYTREE_API_KEY: 'jtk_test', JOYTREE_BASE_URL: url, NO_COLOR: '1', NO_UPDATE_NOTIFIER: '1' },
+      env: { ...process.env, JOYTREE_WATCH_RETRY_MS: process.env.JOYTREE_WATCH_RETRY_MS || "200", HOME: home, USERPROFILE: home, JOYTREE_API_KEY: 'jtk_test', JOYTREE_BASE_URL: url, NO_COLOR: '1', NO_UPDATE_NOTIFIER: '1' },
     });
     let out = '';
     child.stdout.on('data', d => (out += d));

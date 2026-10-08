@@ -118,6 +118,32 @@ joytree deploy -r https://github.com/me/api -n api --dockerfile docker/Dockerfil
 
 ---
 
+### Watch a folder (auto-deploy)
+
+Pick one folder once. Every new or updated archive or HTML file that lands in it is uploaded and redeployed for you - no more re-uploading by hand. Works with upload (non-git) projects.
+
+```bash
+joytree watch                     # watches ~/Joytree-Deploys (created if missing)
+joytree watch ~/Downloads/sites   # or any folder you like
+joytree watch --create            # also create a project when none matches the file name
+joytree watch --project my-site   # send every file to one project
+joytree watch --once              # deploy what is in the folder right now, then exit (CI)
+```
+
+`my-site.zip` deploys to the project **my-site**. Copies such as `my-site (1).zip` update the same project. Accepted: `.zip`, `.tar.gz`, `.tgz`, `.html` (up to 250 MB).
+
+| Flag | Description |
+|---|---|
+| `-p, --project <name>` | Send every file to this project instead of naming it from the file |
+| `--create` | Create a new project when no project matches the file name (off by default) |
+| `--deploy-existing` | Also deploy files already in the folder when watching starts |
+| `--interval <sec>` | How often to check the folder (default 3) |
+| `--stable <sec>` | Wait until a file stops changing this long, so unfinished downloads are never picked up (default 3) |
+| `--once` | Deploy the folder's current contents, then exit |
+| `--no-wait` | Do not follow the build result after each deploy |
+
+Safe by default: files already in the folder when you start are left alone, partial downloads (`.crdownload`, `.part`, ...) are ignored, a GitHub-sourced project is never overwritten by a file, and an unknown name is skipped unless you pass `--create`.
+
 ### Blueprints
 
 A Blueprint is a `joytree.joy` file that describes a whole stack (web, worker, static and Dockerfile services plus databases) so it deploys in one go. Run these inside a git clone, or pass `--repo`.
